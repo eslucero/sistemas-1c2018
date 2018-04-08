@@ -28,9 +28,8 @@ public:
 
 	void push_front(const T& val) {
 		Nodo *n = new Nodo(val);
-		Nodo *old = _head.load();
-		n->_next = old;			 // Esta operación no es atómica (!)
-		_head = n;				 // Esta operación debería ser atómica		 
+		n->_next = _head.load();
+                while(!_head.compare_exchange_weak(n->next, n)){}
 	}
 
 	T& front() const {
