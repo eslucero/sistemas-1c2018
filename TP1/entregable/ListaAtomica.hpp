@@ -29,7 +29,7 @@ public:
 	void push_front(const T& val) {
 		Nodo *n = new Nodo(val);
 		n->_next = _head.load();
-                while(!_head.compare_exchange_weak(n->next, n)){}
+        while(!_head.compare_exchange_weak(n->_next, n)){}
 	}
 
 	T& front() const {
