@@ -21,6 +21,7 @@ class ConcurrentHashMap{
 
 		sem_t semaforo[26];
 		atomic_bool lock;
+		atomic_int cantWords;
 		pair<string, unsigned int> max;
 	public:
 		// La hago publica porque los tests acceden directamente a ella
@@ -57,7 +58,9 @@ ConcurrentHashMap::~ConcurrentHashMap(){
 }
 
 void ConcurrentHashMap::addAndInc(string key){
-	//sem_t mutex; mutex.wait() para que no sea concurrente con maximum
+	// pthread_mutex_t mutex; mutex.wait() para que no sea concurrente con maximum
+	// El problema con esto es que detiene a todos los threads que hagan addAndInc
+	// Cuando el locking tiene que ser al nivel del array. 
 	int k = hash_key(key);
 	// Obtengo acceso exclusivo de la lista a modificar
 	sem_wait(&semaforo[k]);
@@ -74,7 +77,7 @@ void ConcurrentHashMap::addAndInc(string key){
 		pair<string, unsigned int> palabra(key, 1);
 		tabla[k]->push_front(palabra);
 	}
-	// Incrementar variable global con cant. de palabras?
+	cantWords++; // Operación atómica
 
 	sem_post(&semaforo[k]);
 	//mutex.signal()
@@ -93,6 +96,10 @@ bool ConcurrentHashMap::member(string key){
 }
 
 void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
+	// Cada thread procesa distintas filas dependiendo de su id
+	// Por ej., si hay 4 threads, el 1 va a procesar la 1era, 5ta, 10ma, etc.
+	// El 2 va a procesar la 2da, 6ta, 11va, etc.
+	// Etc.
 	for (unsigned int i = id; i < 26; i += nt){
 		pair<string, unsigned int> max_fila("", 0);
 		for (auto it = tabla[i]->CrearIt(); it.HaySiguiente(); it.Avanzar()){
@@ -118,11 +125,12 @@ void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
 void *ConcurrentHashMap::wrapper(void* context){
 	struct args_struct *args = (struct args_struct*) context;
 	ConcurrentHashMap* clase = (ConcurrentHashMap*) args->c;
-	return(clase->buscar_maximo(args->t_id, args->n));
+	return clase->buscar_maximo(args->t_id, args->n);
 }
 
 pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
-	// sem_t mutex; mutex.wait() para la no-concurrencia con addAndInc
+	// pthread_mutex_t mutex; mutex.wait() para la no-concurrencia con addAndInc
+	// Pero no quiero detener a los threads que corran maximum!
 	pthread_t thread[nt];
     unsigned int tid;
     //A cada thread le paso su tid y la cant. de threads, para saber qué filas procesar
@@ -139,6 +147,7 @@ pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
     for (tid = 0; tid < nt; ++tid)
         pthread_join(thread[tid], NULL);
 
+    // mutex.signal()
     return max;
 }
 
