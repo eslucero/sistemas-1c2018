@@ -20,8 +20,12 @@ class ConcurrentHashMap{
 		static void *wrapper(void *context);
 
 		sem_t semaforo[26];
+		sem_t lock_max;
 		atomic_bool lock;
+		pthread_mutex_t lock_add;
+
 		atomic_int cantWords;
+		int escritores;
 		pair<string, unsigned int> max;
 	public:
 		// La hago publica porque los tests acceden directamente a ella
@@ -47,7 +51,10 @@ ConcurrentHashMap::ConcurrentHashMap(){
 		tabla[i] = new Lista<pair<string, unsigned int> >();
 		sem_init(&semaforo[i], 0, 1);
 	}
+	pthread_mutex_init(&lock_add, NULL);
+	sem_init(&lock_max, 0, 1);
 	max = make_pair("", 0);
+	escritores = 0;
 }
 
 ConcurrentHashMap::~ConcurrentHashMap(){
@@ -58,9 +65,13 @@ ConcurrentHashMap::~ConcurrentHashMap(){
 }
 
 void ConcurrentHashMap::addAndInc(string key){
-	// pthread_mutex_t mutex; mutex.wait() para que no sea concurrente con maximum
-	// El problema con esto es que detiene a todos los threads que hagan addAndInc
-	// Cuando el locking tiene que ser al nivel del array. 
+	pthread_mutex_lock(&lock_add);
+	escritores++;
+	// Si soy el primero, no dejo a nadie hacer maximum o espero a que termine
+	if (escritores == 1)
+		sem_wait(&lock_max);
+	pthread_mutex_unlock(&lock_add);
+
 	int k = hash_key(key);
 	// Obtengo acceso exclusivo de la lista a modificar
 	sem_wait(&semaforo[k]);
@@ -80,7 +91,13 @@ void ConcurrentHashMap::addAndInc(string key){
 	cantWords++; // Operación atómica
 
 	sem_post(&semaforo[k]);
-	//mutex.signal()
+
+	pthread_mutex_lock(&lock_add);
+	escritores--;
+	// Si ya todos los threads escribieron, libero a maximum
+	if (escritores == 0)
+		sem_post(&lock_max);
+	pthread_mutex_unlock(&lock_add);
 }
 
 bool ConcurrentHashMap::member(string key){
@@ -129,8 +146,10 @@ void *ConcurrentHashMap::wrapper(void* context){
 }
 
 pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
-	// pthread_mutex_t mutex; mutex.wait() para la no-concurrencia con addAndInc
-	// Pero no quiero detener a los threads que corran maximum!
+	// Me fijo que no pueda correr o no esté corriendo addAndInc
+	// maximum puede correr en un solo thread a la vez (tiene sentido)
+	sem_wait(&lock_max);
+
 	pthread_t thread[nt];
     unsigned int tid;
     //A cada thread le paso su tid y la cant. de threads, para saber qué filas procesar
@@ -147,7 +166,7 @@ pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
     for (tid = 0; tid < nt; ++tid)
         pthread_join(thread[tid], NULL);
 
-    // mutex.signal()
+    sem_post(&lock_max);
     return max;
 }
 
