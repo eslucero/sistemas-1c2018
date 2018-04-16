@@ -1,5 +1,9 @@
 #include <string>
 #include <list>
+#include <vector>
+#include <iterator>
+#include <fstream>
+#include <sstream>
 #include <pthread.h>
 #include <stdio.h>
 #include <semaphore.h>
@@ -24,12 +28,13 @@ class ConcurrentHashMap{
 		atomic_bool lock;
 		pthread_mutex_t lock_add;
 
-		atomic_int cantWords;
 		int escritores;
 		pair<string, unsigned int> max;
 	public:
 		// La hago publica porque los tests acceden directamente a ella
 		Lista<pair<string, unsigned int> >* tabla[26];
+		// Para testear
+		atomic_int cantWords;
 
 	    ConcurrentHashMap();
 	    ~ConcurrentHashMap();
@@ -62,6 +67,8 @@ ConcurrentHashMap::~ConcurrentHashMap(){
   		delete tabla[i];
   		sem_destroy(&semaforo[i]);
 	}
+	pthread_mutex_destroy(&lock_add);
+	sem_destroy(&lock_max);
 }
 
 void ConcurrentHashMap::addAndInc(string key){
@@ -170,8 +177,40 @@ pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
     return max;
 }
 
-ConcurrentHashMap count_words(string arch){
-  //TODO
+template<typename Out>
+void split(const string &s, char delim, Out result) {
+    stringstream ss(s);
+    string item;
+    while (getline(ss, item, delim)) {
+        *(result++) = item;
+    }
+}
+
+vector<string> split(const string &s, char delim) {
+    vector<string> elems;
+    split(s, delim, back_inserter(elems));
+    return elems;
+}
+
+// Devuelvo un puntero porque no tenemos el constructor por copia definido
+ConcurrentHashMap* count_words(string arch){
+	ConcurrentHashMap* h = new ConcurrentHashMap();
+	string linea;
+	ifstream archivo(arch);
+	if (archivo.is_open()){
+		while(getline(archivo, linea)){
+			vector<string> palabras = split(linea, ' ');
+			// Me fijo que no esté vacío para asegurarme de que el iterador sea válido
+			if (!palabras.empty()){
+				for (vector<string>::iterator it = palabras.begin(); it != palabras.end(); it++)
+					h->addAndInc(*it);
+			}
+		}
+	}else {
+		perror("Error al abrir el archivo: ");
+	}
+
+	return h;
 }
 
 ConcurrentHashMap count_words(list<string> archs){

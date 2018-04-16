@@ -12,17 +12,19 @@ void *listar(void *p_minumero)
 {
     int minumero = *((int *) p_minumero);
     if (minumero < 5){
-        h.addAndInc("perro");
-        h.addAndInc("gato");
-        h.addAndInc("asteroide");
-        h.addAndInc("perro");
-        h.addAndInc("flor");
-        h.addAndInc("parasito");
-        h.addAndInc("astilla");
-        h.addAndInc("florencia");
-        h.addAndInc("flaco");
-        h.addAndInc("gastronomico");
-        h.addAndInc("gato");
+        for (int i = 0; i < 10000; i++){
+            h.addAndInc("perro");
+            h.addAndInc("gato");
+            h.addAndInc("asteroide");
+            h.addAndInc("perro");
+            h.addAndInc("flor");
+            h.addAndInc("parasito");
+            h.addAndInc("astilla");
+            h.addAndInc("florencia");
+            h.addAndInc("flaco");
+            h.addAndInc("gastronomico");
+            h.addAndInc("gato");
+        }
     }else{
         pair<string, unsigned int> maximo = h.maximum(4);
         cout << maximo.first << " " << maximo.second << endl;
