@@ -37,6 +37,7 @@ class ConcurrentHashMap{
 		atomic_int cantWords;
 
 	    ConcurrentHashMap();
+            ConcurrentHashMap(const ConcurrentHashMap& otro);
 	    ~ConcurrentHashMap();
 
 	    void addAndInc(string key);
@@ -59,6 +60,24 @@ ConcurrentHashMap::ConcurrentHashMap(){
 	pthread_mutex_init(&lock_add, NULL);
 	sem_init(&lock_max, 0, 1);
 	max = make_pair("", 0);
+	escritores = 0;
+}
+
+// Constructor por copia
+// No es concurrente
+ConcurrentHashMap::ConcurrentHashMap(const ConcurrentHashMap& otro){
+	for (int i = 0; i < 26; i++){
+		tabla[i] = new Lista<pair<string, unsigned int> >();
+		sem_init(&semaforo[i], 0, 1);
+	}
+        
+        for (int i = 0;i < 26;i++)
+            for(auto& it = otro.tabla[i]->CrearIt();it.HaySiguiente();it.Avanzar())
+                tabla[i].push_front(it.Siguiente());
+
+	pthread_mutex_init(&lock_add, NULL);
+	sem_init(&lock_max, 0, 1);
+	max = otro.max;
 	escritores = 0;
 }
 
@@ -213,8 +232,24 @@ ConcurrentHashMap* count_words(string arch){
 	return h;
 }
 
+// Idea: Creo mi hashmap y para cada archivo creo un thread que carga los contenidos del archivo en el hashmap
+// Si uso count_words no concurrente por cada thread, este devuelve un puntero
+// Deberia mergear todos los hashmap de cada thread en uno solo
+// Otra opcion es hacer un count_words no concurrente que modifique un hashmap pasado por argumento
+// No lo sigo mas hasta consultar esto
 ConcurrentHashMap count_words(list<string> archs){
-  //TODO
+    // Parametros a pasarle a count_words
+    struct args_count_words{
+        string path;
+        ConcurrentHashMap* c;
+    };
+    ConcurrentHashMap c;
+    int nt = archs.size();
+    p_thread thread[nt]
+
+    for(int i = 0; i < nt;i++){
+	pthread_create(&thread[tid], NULL, wrapper, &archs[i]);
+    }
 }
 
 ConcurrentHashMap count_words(unsigned int n, list<string> args){
