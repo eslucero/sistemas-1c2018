@@ -37,7 +37,9 @@ class ConcurrentHashMap{
 		atomic_int cantWords;
 
 	    ConcurrentHashMap();
-            ConcurrentHashMap(const ConcurrentHashMap& otro);
+            // Constructor por move, no por copia
+            // El de copia no anda ya que los iteradores no permiten que otro sea const
+            ConcurrentHashMap(ConcurrentHashMap&& otro);
 	    ~ConcurrentHashMap();
 
 	    void addAndInc(string key);
@@ -61,24 +63,24 @@ ConcurrentHashMap::ConcurrentHashMap(){
 	sem_init(&lock_max, 0, 1);
 	max = make_pair("", 0);
 	escritores = 0;
+        cantWords = 0;
 }
 
-// Constructor por copia
+// Constructor por move
+// otro queda inutilizado
 // No es concurrente
-ConcurrentHashMap::ConcurrentHashMap(const ConcurrentHashMap& otro){
+ConcurrentHashMap::ConcurrentHashMap(ConcurrentHashMap&& otro){
 	for (int i = 0; i < 26; i++){
-		tabla[i] = new Lista<pair<string, unsigned int> >();
+		tabla[i] = otro.tabla[i];
+                otro.tabla[i] = NULL;
 		sem_init(&semaforo[i], 0, 1);
 	}
         
-        for (int i = 0;i < 26;i++)
-            for(auto& it = otro.tabla[i]->CrearIt();it.HaySiguiente();it.Avanzar())
-                tabla[i].push_front(it.Siguiente());
-
 	pthread_mutex_init(&lock_add, NULL);
 	sem_init(&lock_max, 0, 1);
 	max = otro.max;
 	escritores = 0;
+        cantWords.store(otro.cantWords.load());
 }
 
 ConcurrentHashMap::~ConcurrentHashMap(){
@@ -211,11 +213,40 @@ vector<string> split(const string &s, char delim) {
     return elems;
 }
 
-// Devuelvo un puntero porque no tenemos el constructor por copia definido
-ConcurrentHashMap* count_words(string arch){
-	ConcurrentHashMap* h = new ConcurrentHashMap();
+ConcurrentHashMap count_words(string arch){
+	ConcurrentHashMap h;
 	string linea;
 	ifstream archivo(arch);
+	if (archivo.is_open()){
+		while(getline(archivo, linea)){
+			vector<string> palabras = split(linea, ' ');
+			// Me fijo que no esté vacío para asegurarme de que el iterador sea válido
+			if (!palabras.empty()){
+				for (vector<string>::iterator it = palabras.begin(); it != palabras.end(); it++)
+					h.addAndInc(*it);
+			}
+		}
+	}else {
+		perror("Error al abrir el archivo: ");
+	}
+
+	return h;
+}
+
+// Parametros a pasarle a count_words_c
+struct args_count_words{
+    string path;
+    ConcurrentHashMap* c;
+};
+
+void* count_words_c(void * args){
+        args_count_words * acw = (args_count_words*)args;
+
+        //cout<<"Archivo: "<<acw->path<<'\n'<<std::endl;
+        ConcurrentHashMap * h = acw->c;
+
+	string linea;
+	ifstream archivo(acw->path);
 	if (archivo.is_open()){
 		while(getline(archivo, linea)){
 			vector<string> palabras = split(linea, ' ');
@@ -227,31 +258,33 @@ ConcurrentHashMap* count_words(string arch){
 		}
 	}else {
 		perror("Error al abrir el archivo: ");
+                //cout<<"Error en: "<<acw->path<<'\n'<<std::endl;
 	}
 
-	return h;
+        return 0;
 }
 
-// Idea: Creo mi hashmap y para cada archivo creo un thread que carga los contenidos del archivo en el hashmap
-// Si uso count_words no concurrente por cada thread, este devuelve un puntero
-// Deberia mergear todos los hashmap de cada thread en uno solo
-// Otra opcion es hacer un count_words no concurrente que modifique un hashmap pasado por argumento
-// No lo sigo mas hasta consultar esto
 ConcurrentHashMap count_words(list<string> archs){
-    // Parametros a pasarle a count_words
-    struct args_count_words{
-        string path;
-        ConcurrentHashMap* c;
-    };
     ConcurrentHashMap c;
     int nt = archs.size();
-    p_thread thread[nt]
+    pthread_t thread[nt];
+    args_count_words args[nt];
 
     for(int i = 0; i < nt;i++){
-	pthread_create(&thread[tid], NULL, wrapper, &archs[i]);
+        args[i].path = archs.front();
+        archs.pop_front();
+        args[i].c = &c;
     }
-}
 
+    for(int i = 0;i < nt;i++)
+        pthread_create(&thread[i], NULL, count_words_c, (void*)&args[i]);
+
+    for(int i = 0;i < nt;i++)
+        pthread_join(thread[i], NULL);
+
+    return c;
+}
+/*
 ConcurrentHashMap count_words(unsigned int n, list<string> args){
   //TODO
 }
@@ -259,3 +292,4 @@ ConcurrentHashMap count_words(unsigned int n, list<string> args){
 pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maximos, list<string> archs){
   //TODO
 }
+*/
