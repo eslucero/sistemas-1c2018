@@ -37,9 +37,9 @@ class ConcurrentHashMap{
 		atomic_int cantWords;
 
 	    ConcurrentHashMap();
-            // Constructor por move, no por copia
-            // El de copia no anda ya que los iteradores no permiten que otro sea const
-            ConcurrentHashMap(ConcurrentHashMap&& otro);
+		// Constructor por move, no por copia
+		// El de copia no anda ya que los iteradores no permiten que otro sea const
+		ConcurrentHashMap(ConcurrentHashMap&& otro);
 	    ~ConcurrentHashMap();
 
 	    void addAndInc(string key);
@@ -72,7 +72,7 @@ ConcurrentHashMap::ConcurrentHashMap(){
 ConcurrentHashMap::ConcurrentHashMap(ConcurrentHashMap&& otro){
 	for (int i = 0; i < 26; i++){
 		tabla[i] = otro.tabla[i];
-                otro.tabla[i] = NULL;
+		otro.tabla[i] = NULL;
 		sem_init(&semaforo[i], 0, 1);
 	}
         
@@ -80,7 +80,7 @@ ConcurrentHashMap::ConcurrentHashMap(ConcurrentHashMap&& otro){
 	sem_init(&lock_max, 0, 1);
 	max = otro.max;
 	escritores = 0;
-        cantWords.store(otro.cantWords.load());
+	cantWords.store(otro.cantWords.load());
 }
 
 ConcurrentHashMap::~ConcurrentHashMap(){
@@ -233,17 +233,18 @@ ConcurrentHashMap count_words(string arch){
 	return h;
 }
 
-// Parametros a pasarle a count_words_c
+// Parametros a pasarle a count_words_c/2
 struct args_count_words{
-    string path;
-    ConcurrentHashMap* c;
+	string path;
+	list<string>* archivos;
+	pthread_mutex_t* mutex;
+	ConcurrentHashMap* c;
 };
 
 void* count_words_c(void * args){
-        args_count_words * acw = (args_count_words*)args;
+    args_count_words * acw = (args_count_words*)args;
 
-        //cout<<"Archivo: "<<acw->path<<'\n'<<std::endl;
-        ConcurrentHashMap * h = acw->c;
+    ConcurrentHashMap * h = acw->c;
 
 	string linea;
 	ifstream archivo(acw->path);
@@ -258,10 +259,48 @@ void* count_words_c(void * args){
 		}
 	}else {
 		perror("Error al abrir el archivo: ");
-                //cout<<"Error en: "<<acw->path<<'\n'<<std::endl;
+        //cout<<"Error en: "<<acw->path<<'\n'<<std::endl;
 	}
 
-        return 0;
+    return 0;
+}
+
+void* count_words_2(void * args){
+    args_count_words* acw = (args_count_words*)args;
+    ConcurrentHashMap* h = acw->c;
+    pthread_mutex_t* mutex = acw->mutex;
+    list<string>* archs = acw->archivos;
+
+    string fichero;
+    while(true){
+	    // Obtengo acceso exclusivo a lista de archivos
+	    pthread_mutex_lock(mutex);
+	    if (!archs->empty()){
+	    	fichero = archs->front();
+	    	archs->pop_front();
+	    }else{
+	    	fichero.clear();
+	    }
+	    pthread_mutex_unlock(mutex);
+	    if (fichero.empty()) // Terminé
+	    	return NULL;
+
+	    string linea;
+		ifstream archivo(fichero);
+		if (archivo.is_open()){
+			while(getline(archivo, linea)){
+				vector<string> palabras = split(linea, ' ');
+				// Me fijo que no esté vacío para asegurarme de que el iterador sea válido
+				if (!palabras.empty()){
+					for (vector<string>::iterator it = palabras.begin(); it != palabras.end(); it++)
+						h->addAndInc(*it);
+				}
+			}
+		}else {
+			perror("Error al abrir el archivo: ");
+	        //cout<<"Error en: "<<acw->path<<'\n'<<std::endl;
+		}
+	}
 }
 
 ConcurrentHashMap count_words(list<string> archs){
@@ -270,25 +309,45 @@ ConcurrentHashMap count_words(list<string> archs){
     pthread_t thread[nt];
     args_count_words args[nt];
 
-    for(int i = 0; i < nt;i++){
+    for(int i = 0; i < nt; i++){
         args[i].path = archs.front();
         archs.pop_front();
         args[i].c = &c;
     }
 
-    for(int i = 0;i < nt;i++)
+    for(int i = 0; i < nt; i++)
         pthread_create(&thread[i], NULL, count_words_c, (void*)&args[i]);
 
-    for(int i = 0;i < nt;i++)
+    for(int i = 0; i < nt; i++)
         pthread_join(thread[i], NULL);
 
     return c;
 }
-/*
-ConcurrentHashMap count_words(unsigned int n, list<string> args){
-  //TODO
+
+ConcurrentHashMap count_words(unsigned int n, list<string> archs){
+    ConcurrentHashMap c;
+    pthread_t thread[n];
+    args_count_words args[n];
+    pthread_mutex_t lock;
+    pthread_mutex_init(&lock, NULL);
+
+    for(int i = 0; i < n; i++){
+        args[i].archivos = &archs;
+        args[i].c = &c;
+        args[i].mutex = &lock;
+    }
+
+    for(int i = 0; i < n; i++)
+        pthread_create(&thread[i], NULL, count_words_2, (void*)&args[i]);
+
+    for(int i = 0; i < n; i++)
+        pthread_join(thread[i], NULL);
+
+    pthread_mutex_destroy(&lock);
+    return c;	
 }
 
+/*
 pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maximos, list<string> archs){
   //TODO
 }
