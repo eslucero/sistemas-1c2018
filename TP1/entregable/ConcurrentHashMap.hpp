@@ -381,21 +381,42 @@ ConcurrentHashMap count_words(unsigned int n, list<string> archs){
     return h;	
 }
 
-
 pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maximos, list<string> archs){
 	// Versión no concurrente:
-	// Esto es como ejecutar count_words no concurrente con cada uno de los archivos de la lista
-	// No uso count_words porque la misma devuelve una instancia nueva de ConcurrentHashMap
-	// (La idea es que todos los archivos se carguen en la misma instancia)
-	// ConcurrentHashMap h;
-	// while(!archs.empty()){
-	// 	cargar_archivo(archs.front(), &h);
-	// 	archs.pop_front();
-	// }
+	// Creo p_archivos instancias de hashmaps, cada thread va a recibir una instancia diferente.
+	// El resto del código es exactamente igual al count_words de arriba.
+	ConcurrentHashMap hashmaps[p_archivos];
+	pthread_t thread[p_archivos];
+	args_count_words args[p_archivos];
+    pthread_mutex_t lock;
+    pthread_mutex_init(&lock, NULL);
 
+    for(int i = 0; i < p_archivos; i++){
+        args[i].archivos = &archs;
+        args[i].c = &hashmaps[i];
+        args[i].mutex = &lock;
+    }
+
+    for(int i = 0; i < p_archivos; i++)
+        pthread_create(&thread[i], NULL, count_words_4, (void*)&args[i]);
+
+    for(int i = 0; i < p_archivos; i++)
+        pthread_join(thread[i], NULL);
+
+    // Auno todas las instancias en uno solo
+    // Para los amantes de los bucles añidados
+    ConcurrentHashMap h;
+    for (int j = 0; j < p_archivos; j++){
+    	for (int i = 0; i < 26; i++){
+			for (auto it = hashmaps[j].tabla[i]->CrearIt(); it.HaySiguiente(); it.Avanzar()){
+				auto t = it.Siguiente();
+				for (int k = 0; k < t.second; k++)
+					h.addAndInc(t.first);
+			}
+    	}
+    }
 	// Versión concurrente:
-	// Detalle: acá estamos pagando el costo de mover todos los datos, arriba no.
-	ConcurrentHashMap h(count_words(p_archivos, archs));
+	//ConcurrentHashMap h(count_words(p_archivos, archs));
 
 	return h.maximum(p_maximos);
 }
