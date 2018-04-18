@@ -21,14 +21,22 @@ struct args_struct{
 class ConcurrentHashMap{
 	private:
 		int hash_key(string key);
+		// Lo usamos para llamar a funciones dentro de clases con pthread_create
 		static void *wrapper(void *context);
 
+		// Semáforo para cada una de las posiciones de la tabla,
+		// así dos procesos no modifican la misma entrada de la tabla simultáneamente (en addAndInc)
 		sem_t semaforo[26];
+		// Semáforo utilizado para que maximum y addAndInc no corran concurrentemente
 		sem_t lock_max;
+		// Mutex (implementado a mano) utilizado en maximum, para sincronizar el uso del recurso compartido "max"
 		atomic_bool lock;
+		// Mutex que se encarga en addAndInc de sincronizar los distintos procesos para implementar el protocolo SRMW (Single Reader Multiple Writers)
 		pthread_mutex_t lock_add;
 
+		// Variable utilizada en addAndInc para contar la cantidad de procesos que la están ejecutando concurrentemente
 		int escritores;
+		// Variable que alberga la palabra con mayor cantidad de repeticiones luego de ejecutar maximum
 		pair<string, unsigned int> max;
 	public:
 		// La hago publica porque los tests acceden directamente a ella
@@ -46,14 +54,17 @@ class ConcurrentHashMap{
 	    bool member(string key);
 	    pair<string, unsigned int> maximum(unsigned int nt);
 	    // No quedaba otra mas que hacerla publica para accederla desde el wrapper
+	    // Cada thread de maximum va a ejecutar una instancia de ella
 	    void *buscar_maximo(unsigned int id, unsigned int nt);
 };
 
+// Mapeo el string a una clave de hash
 int ConcurrentHashMap::hash_key(string key){
 	int res = key.at(0) - 97;
 	return res;
 }
 
+// Todos los semaforos arrancan en 1, el mutex también (por defecto)
 ConcurrentHashMap::ConcurrentHashMap(){
 	for (int i = 0; i < 26; i++){
 		tabla[i] = new Lista<pair<string, unsigned int> >();
@@ -63,7 +74,7 @@ ConcurrentHashMap::ConcurrentHashMap(){
 	sem_init(&lock_max, 0, 1);
 	max = make_pair("", 0);
 	escritores = 0;
-        cantWords = 0;
+    cantWords = 0;
 }
 
 // Constructor por move
@@ -93,17 +104,26 @@ ConcurrentHashMap::~ConcurrentHashMap(){
 }
 
 void ConcurrentHashMap::addAndInc(string key){
+	// Necesito acceso exclusivo a la variable escritores, la cual cuenta cuántos procesos están ejecutando addAndInc
+	// Es necesario para implementar Single Reader Multiple Writers (al revés que la teórica, donde es Multiple Readers Single Writer)
+	// Esto es así porque queremos que más de un proceso pueda acceder a la tabla; el locking únicamente ocurre a nivel del array
+	// Es decir, queremos que dos threads puedan agregar "perro" y "gato" concurrentemente
+	// Pero no queremos agregar elementos si se está ejecutando maximum (por pedido del enunciado)
 	pthread_mutex_lock(&lock_add);
 	escritores++;
 	// Si soy el primero, no dejo a nadie hacer maximum o espero a que termine
 	if (escritores == 1)
 		sem_wait(&lock_max);
+	// Notar que el lock se mantiene mientras hago el wait, entonces ningún otro thread ejecutando addAndInc va a entrar
 	pthread_mutex_unlock(&lock_add);
 
+	// Si llegué acá, significa que ya no se está ejecutando maximum y puse su semáforo en 0
+	// Entonces dicha función no se va a poder ejecutar hasta que todos terminemos
 	int k = hash_key(key);
 	// Obtengo acceso exclusivo de la lista a modificar
 	sem_wait(&semaforo[k]);
 	
+	// Busco si ya está la clave, en cuyo caso aumento la cant. de repeticiones de la misma
 	bool no_esta = true;
 	for (auto it = tabla[k]->CrearIt(); it.HaySiguiente(); it.Avanzar()){
 		auto& t = it.Siguiente();
@@ -112,14 +132,18 @@ void ConcurrentHashMap::addAndInc(string key){
 			no_esta = false;
 		}
 	}
+	// Si no está, creo un par nuevo y la agrego a la lista correspondiente.
 	if (no_esta){
 		pair<string, unsigned int> palabra(key, 1);
 		tabla[k]->push_front(palabra);
 	}
+	// Incremento la cantidad total de palabras (solo sirve para testear, no lo piden)
 	cantWords++; // Operación atómica
 
+	// Terminé de modificar la lista, dejo que otro siga
 	sem_post(&semaforo[k]);
 
+	// Necesito acceso exclusivo a la variable escritores, para decrementarla y ver si yo soy el último en ejecutar addAndInc
 	pthread_mutex_lock(&lock_add);
 	escritores--;
 	// Si ya todos los threads escribieron, libero a maximum
@@ -128,6 +152,7 @@ void ConcurrentHashMap::addAndInc(string key){
 	pthread_mutex_unlock(&lock_add);
 }
 
+// Nada nuevo. Permite concurrencia con cualquier función de la clase.
 bool ConcurrentHashMap::member(string key){
 	bool esta = false;
 	int k = hash_key(key);
@@ -140,11 +165,17 @@ bool ConcurrentHashMap::member(string key){
 	return esta;
 }
 
+// Función ejecutada por cada thread de maximum. Se encarga de procesar filas buscando el máximo de cada una
+// Qué filas va a procesar cada thread está determinado de antemano por su id y la cantidad total de threads
+// Podríamos haber puesto una cola con 26 elementos, y a medida que uno termina, va desencolando
+// Pero esto puede ser más lento, porque todos los threads tienen que acceder a un recurso en común (menos concurrencia)
+// Más rápido simplemente incrementar una variable y distribuir las filas a procesar uniformemente
 void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
 	// Cada thread procesa distintas filas dependiendo de su id
-	// Por ej., si hay 4 threads, el 1 va a procesar la 1era, 5ta, 10ma, etc.
-	// El 2 va a procesar la 2da, 6ta, 11va, etc.
-	// Etc.
+	// Por ej., si hay 4 threads, el 1 va a procesar la 1era, 5ta, 9na, 13va, 17va, 21va, 25va.
+	// El 2 va a procesar la 2da, 6ta, 10va, 14va, 18va, 22va, 26va.
+	// El 3 va a procesar la 3ra, 7ma, 11va, 15va, 19va, 23va.
+	// El 4 va a procesar la 4ta, 8va, 12va, 16va, 20va, 24va.
 	for (unsigned int i = id; i < 26; i += nt){
 		pair<string, unsigned int> max_fila("", 0);
 		for (auto it = tabla[i]->CrearIt(); it.HaySiguiente(); it.Avanzar()){
@@ -152,7 +183,9 @@ void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
 			if (t.second > max_fila.second)
 				max_fila = t;
 		}
+		// Recurso compartido: variable global con el par máximo de toda la tabla
 		// Hago un TTAS Spinlock
+		// Como es una comparación y asignación, mejor hacer busy waiting antes que llamar a un semáforo
 		while(true){
 			while(lock.load());
 			if (!lock.exchange(true))
@@ -161,12 +194,15 @@ void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
 		// Tengo acceso exclusivo
 		if (max_fila.second > max.second)
 			max = max_fila;
+		// unlock
 		lock.store(false);
 	}
 
 	return NULL;
 }
 
+// Simplemente llama a la función buscar_máximo con la instancia de clase pasada por parámetro
+// Además, se le pasa el id del thread y la cantidad total de threads.
 void *ConcurrentHashMap::wrapper(void* context){
 	struct args_struct *args = (struct args_struct*) context;
 	ConcurrentHashMap* clase = (ConcurrentHashMap*) args->c;
@@ -175,15 +211,20 @@ void *ConcurrentHashMap::wrapper(void* context){
 
 pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
 	// Me fijo que no pueda correr o no esté corriendo addAndInc
-	// maximum puede correr en un solo thread a la vez (tiene sentido)
+	// Utilizado para implementar SRMW
+	// maximum puede correr en un solo thread a la vez
+	// Lo cual no es un problema porque de por sí utiliza varios threads, no hay razón por la cual más de un thread llame a maximum
+	// Y si lo hace, que espere
 	sem_wait(&lock_max);
 
 	pthread_t thread[nt];
     unsigned int tid;
     //A cada thread le paso su tid y la cant. de threads, para saber qué filas procesar
     args_struct tids[nt];
+    // Inicializo el "mutex"
     lock.store(false);
 
+    // Recordar que es necesario pasarle la instancia de la clase por parámetro porque pthread_create no admite clases por ser una librería de C
     for (tid = 0; tid < nt; ++tid) {
 		tids[tid].c = this;
 		tids[tid].t_id = tid;
@@ -191,13 +232,16 @@ pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
 		pthread_create(&thread[tid], NULL, wrapper, &tids[tid]);
     }
 
+    // Espero a que terminen todos los threads
     for (tid = 0; tid < nt; ++tid)
         pthread_join(thread[tid], NULL);
 
+    // Terminé de ejecutar maximum. Si addAndInc estaba esperando (u otro thread queriendo ejecutar maximum), se despierta.
     sem_post(&lock_max);
     return max;
 }
 
+// Funciones choreadas de Stackoverflow para dividir un string según un delimitador (en nuestro caso, el espacio en blanco)
 template<typename Out>
 void split(const string &s, char delim, Out result) {
     stringstream ss(s);
@@ -213,6 +257,7 @@ vector<string> split(const string &s, char delim) {
     return elems;
 }
 
+// count_words no concurrente. Simplemente abre el archivo y lo procesa línea por línea, agregando cada palabra al ConcurrentHashMap.
 ConcurrentHashMap count_words(string arch){
 	ConcurrentHashMap h;
 	string linea;
@@ -241,6 +286,8 @@ struct args_count_words{
 	ConcurrentHashMap* c;
 };
 
+// Método que ejecuta cada thread del punto 3. Recibe por parámetro el archivo a procesar y la instancia de la clase.
+// Hay 1 thread por archivo.
 void* count_words_c(void * args){
     args_count_words * acw = (args_count_words*)args;
 
@@ -265,6 +312,12 @@ void* count_words_c(void * args){
     return 0;
 }
 
+// Método que ejecuta cada thread del count_words del punto 4.
+// Pueden haber menos threads que archivos, entonces todos los threads tienen un recurso compartido: la lista de archivos
+// Dicha lista se utiliza como cola, y a medida que cada thread termina de procesar un archivo, saca un elemento de la cola.
+// Utilizo un mutex para obtener acceso exclusivo a la cola.
+// Si ya no hay más elementos, terminé y muere el thread.
+// Por parámetro, recibe: instancia de la clase, puntero al mutex en común, puntero a la lista en común.
 void* count_words_2(void * args){
     args_count_words* acw = (args_count_words*)args;
     ConcurrentHashMap* h = acw->c;
@@ -275,16 +328,20 @@ void* count_words_2(void * args){
     while(true){
 	    // Obtengo acceso exclusivo a lista de archivos
 	    pthread_mutex_lock(mutex);
+	    // Si no está vacía, aún hay elementos por procesar
 	    if (!archs->empty()){
+	    	// Desencolo
 	    	fichero = archs->front();
 	    	archs->pop_front();
 	    }else{
+	    	// Si está vacía, limpio la variable fichero como indicador de que no hay más elementos
 	    	fichero.clear();
 	    }
 	    pthread_mutex_unlock(mutex);
 	    if (fichero.empty()) // Terminé
 	    	return NULL;
 
+	    // Misma mierda que en los demás métodos
 	    string linea;
 		ifstream archivo(fichero);
 		if (archivo.is_open()){
@@ -303,6 +360,7 @@ void* count_words_2(void * args){
 	}
 }
 
+// count_words del punto 3. Voy sacando cada elemento de la lista y se la paso a algún thread.
 ConcurrentHashMap count_words(list<string> archs){
     ConcurrentHashMap c;
     int nt = archs.size();
@@ -324,6 +382,7 @@ ConcurrentHashMap count_words(list<string> archs){
     return c;
 }
 
+// count_words del punto 4. Inicializo un mutex en común para pasarselo a todos los threads.
 ConcurrentHashMap count_words(unsigned int n, list<string> archs){
     ConcurrentHashMap c;
     pthread_t thread[n];
