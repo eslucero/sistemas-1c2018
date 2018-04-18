@@ -22,8 +22,10 @@ int main(){
 
     pair<string, unsigned int> maximo = h.maximum(4);
     pair<string, unsigned int> maximo_2 = h_2.maximum(4);
+    pair<string, unsigned int> maximo_3 = maximum(4, 6, archivos);
     cout << "Maximo: " << maximo.first << " " << maximo.second << endl;
     cout << "Maximo 2: " << maximo_2.first << " " << maximo_2.second << endl;
+    cout << "Maximo 3: " << maximo_3.first << " " << maximo_3.second << endl;
     int palabras = h.cantWords;
     int palabras_2 = h_2.cantWords;
     cout << "Cant. palabras: " << palabras << endl;
