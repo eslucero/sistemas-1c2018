@@ -275,6 +275,7 @@ void cargar_archivo(string arch, ConcurrentHashMap* h){
 	}else {
 		perror("Error al abrir el archivo: ");
 	}	
+	archivo.close();
 }
 
 // count_words no concurrente.
