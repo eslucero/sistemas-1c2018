@@ -14,8 +14,8 @@ void *listar(void *p_minumero)
     if (minumero < 5){
         for (int i = 0; i < 10000; i++){
             h.addAndInc("perro");
-            h.addAndInc("gato");
             h.addAndInc("asteroide");
+            h.addAndInc("gato");
             h.addAndInc("perro");
             h.addAndInc("flor");
             h.addAndInc("parasito");

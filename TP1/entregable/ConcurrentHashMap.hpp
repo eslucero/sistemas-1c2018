@@ -11,6 +11,8 @@
 #include <atomic>
 #include "ListaAtomica.hpp"
 
+#define BILLION 1E9
+
 using namespace std;
 
 struct args_struct{
@@ -388,7 +390,9 @@ pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maxim
 	// Versión no concurrente:
 	// Creo p_archivos instancias de hashmaps, cada thread va a recibir una instancia diferente.
 	// El resto del código es exactamente igual al count_words de arriba.
-	// TIME_START
+	struct timespec start, end;
+	double accum;
+	clock_gettime(CLOCK_REALTIME, &start);
 	ConcurrentHashMap hashmaps[p_archivos];
 	pthread_t thread[p_archivos];
 	args_count_words args[p_archivos];
@@ -419,12 +423,21 @@ pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maxim
 			}
     	}
     }
-    // TIME_STOP
-	// Versión concurrente:
-	// TIME_START
-	//ConcurrentHashMap h(count_words(p_archivos, archs));
-	// TIME_STOP
+    clock_gettime(CLOCK_REALTIME, &end);
+    accum = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
+    cout << accum << endl;
 
 	return h.maximum(p_maximos);
 }
 
+pair<string, unsigned int> maximum_c(unsigned int p_archivos, unsigned int p_maximos, list<string> archs){
+	struct timespec start, end;
+	double accum;
+	clock_gettime(CLOCK_REALTIME, &start);
+	ConcurrentHashMap h(count_words(p_archivos, archs));
+	clock_gettime(CLOCK_REALTIME, &end);
+ 	accum = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
+ 	cout << accum << endl;
+
+	return h.maximum(p_maximos);
+}
