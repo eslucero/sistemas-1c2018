@@ -425,7 +425,7 @@ pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maxim
     }
     clock_gettime(CLOCK_REALTIME, &end);
     accum = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
-    cout << accum << endl;
+    cout << accum;
 
 	return h.maximum(p_maximos);
 }
@@ -437,7 +437,7 @@ pair<string, unsigned int> maximum_c(unsigned int p_archivos, unsigned int p_max
 	ConcurrentHashMap h(count_words(p_archivos, archs));
 	clock_gettime(CLOCK_REALTIME, &end);
  	accum = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
- 	cout << accum << endl;
+ 	cout << accum;
 
 	return h.maximum(p_maximos);
 }
