@@ -6,6 +6,7 @@
 #include <sstream>
 #include <pthread.h>
 #include <stdio.h>
+#include <time.h>
 #include <semaphore.h>
 #include <atomic>
 #include "ListaAtomica.hpp"
@@ -192,7 +193,7 @@ void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
 				break;
 		}
 		// Tengo acceso exclusivo
-		if (max_fila.second > max.second)
+		if (max_fila.second > max.second || (max_fila.second == max.second && max_fila.first < max.first))
 			max = max_fila;
 		// unlock
 		lock.store(false);
@@ -387,6 +388,7 @@ pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maxim
 	// Versión no concurrente:
 	// Creo p_archivos instancias de hashmaps, cada thread va a recibir una instancia diferente.
 	// El resto del código es exactamente igual al count_words de arriba.
+	// TIME_START
 	ConcurrentHashMap hashmaps[p_archivos];
 	pthread_t thread[p_archivos];
 	args_count_words args[p_archivos];
@@ -417,8 +419,11 @@ pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maxim
 			}
     	}
     }
+    // TIME_STOP
 	// Versión concurrente:
+	// TIME_START
 	//ConcurrentHashMap h(count_words(p_archivos, archs));
+	// TIME_STOP
 
 	return h.maximum(p_maximos);
 }
