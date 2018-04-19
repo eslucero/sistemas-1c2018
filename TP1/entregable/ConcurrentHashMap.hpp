@@ -236,9 +236,10 @@ pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
     for (tid = 0; tid < nt; ++tid)
         pthread_join(thread[tid], NULL);
 
+    pair<string, unsigned int> max_ = max;
     // Terminé de ejecutar maximum. Si addAndInc estaba esperando (u otro thread queriendo ejecutar maximum), se despierta.
     sem_post(&lock_max);
-    return max;
+    return max_;
 }
 
 // Funciones choreadas de Stackoverflow para dividir un string según un delimitador (en nuestro caso, el espacio en blanco)
