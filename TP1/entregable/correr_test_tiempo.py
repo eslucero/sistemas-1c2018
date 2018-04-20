@@ -3,7 +3,7 @@ import os
 numThreads = [2, 4, 16, 96]
 
 def correr(ct, ca):
-	path = './main %d %d >> results.csv' % (ct, ca)
+	path = './test-tiempo %d %d >> results.csv' % (ct, ca)
 	if(os.system(path) == -1):
 		print('ERROR EN EL ARCHIVO %s' % path)
 
