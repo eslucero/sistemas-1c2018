@@ -8,6 +8,7 @@
 using namespace std;
 
 int main(){
+    cout << "Corriendo test-correctitud... ";
     list<string> archivos;
     for (int i = 0; i < 100; i++){
         string path = "casos_tests_corpus/corpus_";
@@ -32,9 +33,9 @@ int main(){
         int maximo;
         archivo>>maximo;
 
-        cout << max.first << " " << max.second << " " << maximo << endl;
         assert(max.second == maximo);
         assert(h.cantWords == cantTotal);
+        cout << "OK!" << endl;
     }else {
         perror("Error al abrir el archivo: ");
     }   

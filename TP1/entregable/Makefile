@@ -9,7 +9,7 @@ LDLIBS = -lpthread
 .cpp.o:
 	$(CXX) $(CXXFLAGS) -c $<
 
-BIN = test-2 test-3 test-5 test-tiempo test-hashmap test-correctitud
+BIN = test-2 test-3 test-5 test-tiempo test-hashmap test-lista test-correctitud
 OBJ = ConcurrentHashMap.hpp
 
 all: $(BIN)
@@ -64,6 +64,12 @@ test-hashmap: $(OBJ) test_hashmap.cpp
 
 test-hashmap-run: test-hashmap
 	./test-hashmap
+
+test-lista: $(OBJ) test_lista.cpp
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ test_lista.cpp $(LDLIBS)
+
+test-lista-run: test-lista
+	./test-lista
 
 clean:
 	rm -f $(BIN) 	

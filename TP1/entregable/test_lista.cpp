@@ -1,8 +1,10 @@
-#include<pthread.h>
-#include<stdio.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <iostream>
 #include "ListaAtomica.hpp"
 
 #define  CANT_THREADS  10
+#define  CANT_ELEM     100000
 
 using namespace std;
 
@@ -11,7 +13,7 @@ Lista<int> list;
 void *listar(void *p_minumero)
 {
     int minumero = *((int *) p_minumero);
-    for (int i = minumero * 100000; i < (minumero + 1) * 100000; i++){
+    for (int i = minumero * CANT_ELEM; i < (minumero + 1) * CANT_ELEM; i++){
     	list.push_front(i);
     }
     return NULL;
@@ -19,6 +21,7 @@ void *listar(void *p_minumero)
 
 int main(int argc, char **argv) 
 {
+    cout << "Corriendo test-lista... ";
     pthread_t thread[CANT_THREADS];
     int tids[CANT_THREADS], tid;
 
@@ -37,7 +40,10 @@ int main(int argc, char **argv)
     	cant++;
     }
 
-    printf("%d \n", cant);
+    if (cant == CANT_THREADS * CANT_ELEM)
+        cout << "OK!" << endl;
+    else
+        cout << "FALTAN ELEMENTOS!" << endl;
 
     return 0;
 }

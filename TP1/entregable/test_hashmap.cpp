@@ -3,6 +3,7 @@
 #include "ConcurrentHashMap.hpp"
 
 #define  CANT_THREADS  10
+#define  CANT_ELEM     10000
 
 using namespace std;
 
@@ -11,8 +12,8 @@ ConcurrentHashMap h;
 void *listar(void *p_minumero)
 {
     int minumero = *((int *) p_minumero);
-    if (minumero < 5){
-        for (int i = 0; i < 10000; i++){
+    if (minumero < (CANT_THREADS / 2)){
+        for (int i = 0; i < CANT_ELEM; i++){
             h.addAndInc("perro");
             h.addAndInc("asteroide");
             h.addAndInc("gato");
@@ -33,6 +34,7 @@ void *listar(void *p_minumero)
 }
 
 int main(){
+    cout << "Corriendo test_hashmap... " << endl;
     pthread_t thread[CANT_THREADS];
     int tids[CANT_THREADS], tid;
 
@@ -52,7 +54,10 @@ int main(){
 	}
 
     pair<string, unsigned int> maximo = h.maximum(4);
-    cout << "Maximo: " << maximo.first << " " << maximo.second << endl;
+    if (maximo.first == "gato" && maximo.second == CANT_THREADS * CANT_ELEM)
+        cout << "OK!" << endl;
+    else
+        cout << "ERROR!" << endl;
     
 	return 0;
 }
