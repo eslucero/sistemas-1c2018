@@ -10,7 +10,7 @@ def correr(ct, ca):
 
 if not os.path.exists("results.csv"):
 	with open("results.csv", 'w') as f:
-		f.write("ct, ca, tiempo, tiempo_c\n")
+		f.write("ct,ca,tiempo,tiempo_c\n")
 
 for f in range(1, 10):
 	for t in [i for i in numThreads if i <= f]:
