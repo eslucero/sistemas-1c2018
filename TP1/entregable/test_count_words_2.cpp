@@ -9,7 +9,7 @@ using namespace std;
 
 int main(){
     list<string> archivos;
-    for (int i = 0; i < 10; i++){
+    for (int i = 0; i < 100; i++){
         string path = "casos_tests_corpus/corpus_";
         path += to_string(i);
         archivos.push_back(path);

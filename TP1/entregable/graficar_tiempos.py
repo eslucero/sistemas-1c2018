@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 columnas = ["#Threads", "Tiempo(seg)", "Concurrente?"]
-archivos_a_ver = [2, 5, 9]
+archivos_a_ver = [100]
 a = pd.read_csv("results.csv")
 
 for i in archivos_a_ver:

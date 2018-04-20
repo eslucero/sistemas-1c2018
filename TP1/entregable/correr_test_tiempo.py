@@ -1,17 +1,16 @@
 import os
 
-numThreads = [2, 4, 16, 96]
+numThreads = [2, 4, 16, 32, 64]
 
 def correr(ct, ca):
-	path = './test-tiempo %d %d >> results.csv' % (ct, ca)
-	if(os.system(path) == -1):
-		print('ERROR EN EL ARCHIVO %s' % path)
-
+    path = './test-tiempo %d %d >> results.csv' % (ct, ca)
+    if(os.system(path) == -1):
+        print('ERROR EN EL ARCHIVO %s' % path)
 
 if not os.path.exists("results.csv"):
-	with open("results.csv", 'w') as f:
-		f.write("ct,ca,tiempo,tiempo_c\n")
+    with open("results.csv", 'w') as f:
+        f.write("ct,ca,tiempo,tiempo_c\n")
 
-for f in range(1, 10):
-	for t in [i for i in numThreads if i <= f]:
-		correr(t, f)
+f = 100
+for t in numThreads:
+    correr(t, f)

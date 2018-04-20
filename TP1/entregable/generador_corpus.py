@@ -1,6 +1,8 @@
 import random
 random.seed(0)
 
+cant_a_generar = 100
+
 with open("corpus", 'r') as f:
     lineas = f.readlines()
     # Saco el newline de cada linea
@@ -9,7 +11,7 @@ with open("corpus", 'r') as f:
     cantidadTotal = 0
     b = {}
 
-    for j in range(0, 10):
+    for j in range(0, cant_a_generar):
         i = random.randint(0, len(lineas))
         a = random.sample(lineas, i)
 
