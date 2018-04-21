@@ -12,5 +12,7 @@ if not os.path.exists("results.csv"):
         f.write("ct,ca,tiempo,tiempo_c\n")
 
 f = 100
-for t in numThreads:
-    correr(t, f)
+for k in range(0, 10):
+    for j in range(0, 100):
+        for t in numThreads:
+            correr(t, f)

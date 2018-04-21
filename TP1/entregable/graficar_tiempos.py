@@ -2,6 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+sns.set(font_scale=1.5)
+
 columnas = ["#Threads", "Tiempo(seg)", "Concurrente?"]
 archivos_a_ver = [100]
 a = pd.read_csv("results.csv")
