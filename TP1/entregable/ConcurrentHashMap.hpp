@@ -17,8 +17,6 @@ using namespace std;
 
 struct args_struct{
 	void *c;
-	unsigned int t_id;
-	unsigned int n;
 };
 
 class ConcurrentHashMap{
@@ -27,11 +25,9 @@ class ConcurrentHashMap{
 		static void *wrapper(void *context);
 
 		sem_t semaforo[26];
-		sem_t lock_max;
 		atomic_bool lock;
-		pthread_mutex_t lock_add;
+		atomic_int i_max;
 
-		int escritores;
 		pair<string, unsigned int> max;
 	public:
 		Lista<pair<string, unsigned int> >* tabla[26];
@@ -44,7 +40,7 @@ class ConcurrentHashMap{
 	    void addAndInc(string key);
 	    bool member(string key);
 	    pair<string, unsigned int> maximum(unsigned int nt);
-	    void *buscar_maximo(unsigned int id, unsigned int nt);
+	    void *buscar_maximo();
 };
 
 int ConcurrentHashMap::hash_key(string key){
@@ -57,10 +53,7 @@ ConcurrentHashMap::ConcurrentHashMap(){
 		tabla[i] = new Lista<pair<string, unsigned int> >();
 		sem_init(&semaforo[i], 0, 1);
 	}
-	pthread_mutex_init(&lock_add, NULL);
-	sem_init(&lock_max, 0, 1);
 	max = make_pair("", 0);
-	escritores = 0;
     cantWords = 0;
 }
 
@@ -70,11 +63,7 @@ ConcurrentHashMap::ConcurrentHashMap(ConcurrentHashMap&& otro){
 		otro.tabla[i] = NULL;
 		sem_init(&semaforo[i], 0, 1);
 	}
-        
-	pthread_mutex_init(&lock_add, NULL);
-	sem_init(&lock_max, 0, 1);
 	max = otro.max;
-	escritores = 0;
 	cantWords.store(otro.cantWords.load());
 }
 
@@ -83,17 +72,9 @@ ConcurrentHashMap::~ConcurrentHashMap(){
   		delete tabla[i];
   		sem_destroy(&semaforo[i]);
 	}
-	pthread_mutex_destroy(&lock_add);
-	sem_destroy(&lock_max);
 }
 
 void ConcurrentHashMap::addAndInc(string key){
-	pthread_mutex_lock(&lock_add);
-	escritores++;
-	if (escritores == 1)
-		sem_wait(&lock_max);
-	pthread_mutex_unlock(&lock_add);
-
 	int k = hash_key(key);
 	// Obtengo acceso exclusivo de la lista a modificar
 	sem_wait(&semaforo[k]);
@@ -113,13 +94,6 @@ void ConcurrentHashMap::addAndInc(string key){
 	cantWords++; // Operación atómica
 
 	sem_post(&semaforo[k]);
-
-	pthread_mutex_lock(&lock_add);
-	escritores--;
-	// Si ya todos los threads escribieron, libero a maximum
-	if (escritores == 0)
-		sem_post(&lock_max);
-	pthread_mutex_unlock(&lock_add);
 }
 
 
@@ -136,9 +110,13 @@ bool ConcurrentHashMap::member(string key){
 }
 
 // Función ejecutada por cada thread de maximum
-void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
-	// Cada thread procesa distintas filas dependiendo de su id
-	for (unsigned int i = id; i < 26; i += nt){
+void *ConcurrentHashMap::buscar_maximo(){
+	while(true){
+		int i = i_max.fetch_add(1); // Operación atómica, devuelve el valor que tenia antes
+
+		if (i >= 26) // No quedan más filas por procesar
+			return NULL;
+
 		pair<string, unsigned int> max_fila("", 0);
 		for (auto it = tabla[i]->CrearIt(); it.HaySiguiente(); it.Avanzar()){
 			auto t = it.Siguiente();
@@ -156,29 +134,27 @@ void *ConcurrentHashMap::buscar_maximo(unsigned int id, unsigned int nt){
 
 		lock.store(false);
 	}
-
-	return NULL;
 }
 
 
 void *ConcurrentHashMap::wrapper(void* context){
 	struct args_struct *args = (struct args_struct*) context;
 	ConcurrentHashMap* clase = (ConcurrentHashMap*) args->c;
-	return clase->buscar_maximo(args->t_id, args->n);
+	return clase->buscar_maximo();
 }
 
 pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
-	sem_wait(&lock_max);
+	for (int i = 0; i < 26; i++)
+		sem_wait(&semaforo[i]);
 
 	pthread_t thread[nt];
     unsigned int tid;
     args_struct tids[nt];
     lock.store(false);
+    i_max = 0;
 
     for (tid = 0; tid < nt; ++tid) {
 		tids[tid].c = this;
-		tids[tid].t_id = tid;
-		tids[tid].n = nt;
 		pthread_create(&thread[tid], NULL, wrapper, &tids[tid]);
     }
 
@@ -186,7 +162,10 @@ pair<string, unsigned int> ConcurrentHashMap::maximum(unsigned int nt){
         pthread_join(thread[tid], NULL);
 
     pair<string, unsigned int> max_ = max;
-    sem_post(&lock_max);
+
+    for (int i = 0; i < 26; i++)
+		sem_post(&semaforo[i]);
+
     return max_;
 }
 
@@ -234,7 +213,7 @@ ConcurrentHashMap count_words(string arch){
 struct args_count_words{
 	string path;
 	list<string>* archivos;
-	pthread_mutex_t* mutex;
+	atomic_int* indice;
 	ConcurrentHashMap* c;
 };
 
@@ -271,21 +250,20 @@ ConcurrentHashMap count_words(list<string> archs){
 void* count_words_4(void * args){
     args_count_words* acw = (args_count_words*)args;
     ConcurrentHashMap* h = acw->c;
-    pthread_mutex_t* mutex = acw->mutex;
     list<string>* archs = acw->archivos;
+    atomic_int* i_arch = acw->indice;
 
     string fichero;
     while(true){
-	    pthread_mutex_lock(mutex);
-	    if (!archs->empty()){
-	    	fichero = archs->front();
-	    	archs->pop_front();
+    	int i = atomic_fetch_add(i_arch, 1); // Atómico, devuelve valor anterior
+
+	    if (i < archs->size()){
+	    	list<string>::iterator it = archs->begin();
+	    	advance(it, i);
+	    	fichero = *it;
 	    }else{
-	    	fichero.clear();
+	    	return NULL; // Terminé
 	    }
-	    pthread_mutex_unlock(mutex);
-	    if (fichero.empty()) // Terminé
-	    	return NULL;
 
 	    cargar_archivo(fichero, h);
 	}
@@ -295,13 +273,13 @@ ConcurrentHashMap count_words(unsigned int n, list<string> archs){
     ConcurrentHashMap h;
     pthread_t thread[n];
     args_count_words args[n];
-    pthread_mutex_t lock;
-    pthread_mutex_init(&lock, NULL);
+    atomic_int indice;
+    indice.store(0);
 
     for(int i = 0; i < n; i++){
         args[i].archivos = &archs;
         args[i].c = &h;
-        args[i].mutex = &lock;
+        args[i].indice = &indice;
     }
 
     for(int i = 0; i < n; i++)
@@ -310,7 +288,6 @@ ConcurrentHashMap count_words(unsigned int n, list<string> archs){
     for(int i = 0; i < n; i++)
         pthread_join(thread[i], NULL);
 
-    pthread_mutex_destroy(&lock);
     return h;	
 }
 
@@ -322,13 +299,13 @@ pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maxim
 	ConcurrentHashMap hashmaps[p_archivos];
 	pthread_t thread[p_archivos];
 	args_count_words args[p_archivos];
-    pthread_mutex_t lock;
-    pthread_mutex_init(&lock, NULL);
+	atomic_int indice;
+	indice.store(0);
 
     for(int i = 0; i < p_archivos; i++){
         args[i].archivos = &archs;
         args[i].c = &hashmaps[i];
-        args[i].mutex = &lock;
+        args[i].indice = &indice;
     }
 
     for(int i = 0; i < p_archivos; i++)
@@ -350,7 +327,7 @@ pair<string, unsigned int> maximum(unsigned int p_archivos, unsigned int p_maxim
 
     clock_gettime(CLOCK_REALTIME, &end);
     accum = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
-    cout << accum << endl;
+    //cout << accum << endl;
 
 	return h.maximum(p_maximos);
 }
@@ -364,7 +341,7 @@ pair<string, unsigned int> maximum_c(unsigned int p_archivos, unsigned int p_max
 
 	clock_gettime(CLOCK_REALTIME, &end);
  	accum = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
- 	cout << accum << endl;
+ 	//cout << accum << endl;
 
 	return h.maximum(p_maximos);
 }
