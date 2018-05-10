@@ -346,7 +346,17 @@ struct Ext2FSInode * Ext2FS::get_file_inode_from_dir_inode(struct Ext2FSInode * 
 	assert(INODE_ISDIR(from));
 
 	//TODO: Ejercicio 3
-
+	unsigned int add_per_block = block_size / sizeof(unsigned int);
+	unsigned int amount = 12 + add_per_block + add_per_block * add_per_block;
+	unsigned int block_size = 1024 << _superblock->log_block_size;
+	unsigned char buf[block_size];	
+	unsigned int nodes_per_block = block_size / sizeof();
+	Ext2FSDirEntry * dir_entry = new struct Ext2FSDirEntry();
+	for (unsigned int i = 0; i < amount; i++){
+		buf = get_block_address(from, i);
+		for (unsigned int j = 0; )
+		memcopy(dir_entry, buf )
+	}
 }
 
 fd_t Ext2FS::get_free_fd()
