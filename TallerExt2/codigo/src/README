@@ -1,0 +1,12 @@
+1) La implementación de los tres métodos de Ext2 se realizan en el archivo ext2fs.cpp
+El código no lo van a poder probar hasta no terminar el punto 2.
+
+1.1) unsigned int get block address(inode,block number)
+1.2) Ext2FSInode * load inode(inode number)
+1.3) Ext2FSInode * get file inode from dir inode(from,filename)
+
+2) El programa que lee los caracteres se realiza en el archivo testhdd.cpp que está en la carpeta test. El resultado de leer el archivo debería ser un texto razonable (si los 3 métodos anteriores funcionaron)
+
+Nota: Recomendamos fuertemente debugear con gdb en vez de printf.
+https://darkdust.net/files/GDB%20Cheat%20Sheet.pdf
+
