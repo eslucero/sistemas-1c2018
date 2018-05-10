@@ -281,15 +281,53 @@ unsigned int Ext2FS::blockaddr2sector(unsigned int block)
 struct Ext2FSInode * Ext2FS::load_inode(unsigned int inode_number)
 {
 	//TODO: Ejercicio 2
+	unsigned int block_size = 1024 << _superblock->log_block_size;
+	unsigned int nodes_per_block = block_size / _superblock->inode_size;
 
+	// Buscamos bloque correspondiente al inode
+	unsigned int block_group_id = blockgroup_for_inode(inode_number);
+	struct Ext2FSBlockGroupDescriptor * group_data = blockgroup(block_group_id);
+	unsigned int offset = blockgroup_inode_index(inode_number);
+	unsigned int pos = group_data->inode_table + (offset / nodes_per_block);
+ 	
+ 	// Cargamos el bloque en memoria
+ 	unsigned char buf[block_size];
+ 	read_block(pos, buf);
+
+	struct Ext2FSInode* res = new struct Ext2FSInode();
+
+	// Vemos en que parte del bloque se encuentra el inode buscado
+	unsigned int cual = offset % nodes_per_block;
+
+	memcopy(res, buf + _superblock->inode_size * cual, sizeof(Ext2FSInode));
+
+	return res;
 }
 
 unsigned int Ext2FS::get_block_address(struct Ext2FSInode * inode, unsigned int block_number)
 {
-
 	//TODO: Ejercicio 1
 	//HACER SÓLO HASTA SEGUNDA INDIRECCIÓN
+	unsigned int block_size = 1024 << _superblock->log_block_size;
+	unsigned char buf[block_size];
+	if (block_number < 12)
+		return inode->block[block_number];
 
+	unsigned int add_per_block = block_size / sizeof(unsigned int);
+	if (block_number < 12 + add_per_block){
+		read_block(inode->block[12], buf);
+		unsigned int * buf_casteado = (unsigned int *)buf;
+		return buf_casteado[block_number - 12];
+	}
+
+	read_block(inode->block[13], buf);
+	unsigned int * buf_casteado = (unsigned int *) buf;
+	block_number -= 12 + add_per_block;
+	unsigned int indice_intermedio = block_number / add_per_block;
+
+	read_block(buf_casteado[indice_intermedio], buf);
+	block_number -= indice_intermedio * add_per_block;
+	return buf_casteado[block_number];
 }
 
 void Ext2FS::read_block(unsigned int block_address, unsigned char * buffer)
