@@ -59,5 +59,18 @@ int main(int argc, char ** argv)
 
 	//TODO: Completar el código del último ejercicio acá
 
+        fd_t f = fs->open("/grupos/gNUMERO/nota.txt", "r");
+        
+        fs->seek(f, 14000);
+        
+        char buf[50];
+        fs->read(f, buf, 50);
+
+        for(int i = 0; i < 50; i++)
+            std::cout<<buf[i];
+        std::cout<<std::endl;
+
+        fs->close(f);
+
 	return 0;
 }

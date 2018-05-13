@@ -294,7 +294,7 @@ struct Ext2FSInode * Ext2FS::load_inode(unsigned int inode_number)
  	unsigned char buf[block_size];
  	read_block(pos, buf);
 
-	struct Ext2FSInode* res = new struct Ext2FSInode();
+	struct Ext2FSInode* res = new Ext2FSInode();
 
 	// Vemos en que parte del bloque se encuentra el inode buscado
 	unsigned int cual = offset % nodes_per_block;
@@ -349,13 +349,40 @@ struct Ext2FSInode * Ext2FS::get_file_inode_from_dir_inode(struct Ext2FSInode * 
 	unsigned int add_per_block = block_size / sizeof(unsigned int);
 	unsigned int amount = 12 + add_per_block + add_per_block * add_per_block;
 	unsigned int block_size = 1024 << _superblock->log_block_size;
+
 	unsigned char buf[block_size];	
-	unsigned int nodes_per_block = block_size / sizeof();
-	Ext2FSDirEntry * dir_entry = new struct Ext2FSDirEntry();
+        Ext2FSDirEntry * dir;
+
+        // Creo un buffer para el filename de los direntry que voy a ver
+        // Reservo un string tan largo como filename
+        size_t filename_length = strlen(filename);
+        char * buf_filename = new char[filename_length];
+
 	for (unsigned int i = 0; i < amount; i++){
 		buf = get_block_address(from, i);
-		for (unsigned int j = 0; )
-		memcopy(dir_entry, buf )
+                dir = (Ext2FSDirEntry *)buf;
+
+                if (dir->name_length == filename_length){
+                    // Este dir entry contiene el filename buscado
+                    // Cuantos bloques ocupa todo el dir_entry?
+                    unsigned int bloques_ocupados = (unsigned int)dir->record_length / block_size;
+                    if (bloques_ocupados == 0){
+                        // Ocupa solo el bloque actual
+                        // Comparemos filenames
+                        if (strncmp(filename, dir->name, filename_length) == 0){
+                            // Lo encontramos
+                            return load_inode(dir->inode);
+                        }
+                        else{
+                            // Cabe otro dir entry en este bloque?
+                        }
+                    }
+                    else{
+                        // Ocupa más de un bloque
+                    
+                    }
+                }
+
 	}
 }
 
