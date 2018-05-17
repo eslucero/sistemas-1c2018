@@ -350,40 +350,35 @@ struct Ext2FSInode * Ext2FS::get_file_inode_from_dir_inode(struct Ext2FSInode * 
 	unsigned int amount = 12 + add_per_block + add_per_block * add_per_block;
 	unsigned int block_size = 1024 << _superblock->log_block_size;
 
-	unsigned char buf[block_size];	
         Ext2FSDirEntry * dir;
 
-        // Creo un buffer para el filename de los direntry que voy a ver
-        // Reservo un string tan largo como filename
-        size_t filename_length = strlen(filename);
-        char * buf_filename = new char[filename_length];
+        int block_pos = 0;
+        while(block_pos < block_size){
+            unsigned char buf[block_size];
+            if (block_pos < 12){
+                read_block(from->block[block_pos], buf);
+            }
+            else if (block_pos >= 12 && block_pos < 12 * add_per_block){
+                // 1er nivel de indireccion
+                read_block(from->block[12], buf);
+                unsigned int * table_entry = (unsigned int*)buf;
+                read_block(table_entry[block_pos - 12], buf);
+            }
+            else{
+                // 2do nivel de indireccion
+                read_block(from->block[13], buf);
+                unsigned int * table_entry = (unsigned int*)buf;
+                int indice_intermedio = (block_pos - 13)/add_per_block;
+                read_block(table_entry[indice_intermedio], buf);
+                table_entry = (unsigned int*)buf;
+                read_block(table_entry[block_pos - add_per_block * indice_intermedio], buf);
+            }
 
-	for (unsigned int i = 0; i < amount; i++){
-		buf = get_block_address(from, i);
-                dir = (Ext2FSDirEntry *)buf;
-
-                if (dir->name_length == filename_length){
-                    // Este dir entry contiene el filename buscado
-                    // Cuantos bloques ocupa todo el dir_entry?
-                    unsigned int bloques_ocupados = (unsigned int)dir->record_length / block_size;
-                    if (bloques_ocupados == 0){
-                        // Ocupa solo el bloque actual
-                        // Comparemos filenames
-                        if (strncmp(filename, dir->name, filename_length) == 0){
-                            // Lo encontramos
-                            return load_inode(dir->inode);
-                        }
-                        else{
-                            // Cabe otro dir entry en este bloque?
-                        }
-                    }
-                    else{
-                        // Ocupa más de un bloque
-                    
-                    }
-                }
-
-	}
+            dir = (Ext2FSDirEntry *)buf;
+            if (strcmp(dir->name, filename) == 0)
+                return load_inode(dir->inode);
+            block_pos++;
+        }
 }
 
 fd_t Ext2FS::get_free_fd()
