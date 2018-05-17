@@ -350,7 +350,6 @@ struct Ext2FSInode * Ext2FS::get_file_inode_from_dir_inode(struct Ext2FSInode * 
 	unsigned int amount = 12 + add_per_block + add_per_block * add_per_block;
 	unsigned int block_size = 1024 << _superblock->log_block_size;
 
-<<<<<<< HEAD
         Ext2FSDirEntry * dir;
 
         int block_pos = 0;
@@ -380,61 +379,7 @@ struct Ext2FSInode * Ext2FS::get_file_inode_from_dir_inode(struct Ext2FSInode * 
                 return load_inode(dir->inode);
             block_pos++;
         }
-=======
-	unsigned char buf[block_size];	
-    Ext2FSDirEntry * dir;
-
-    // Creo un buffer para el filename de los direntry que voy a ver
-    // Reservo un string tan largo como filename
-    size_t filename_length = strlen(filename);
-    char * buf_filename = new char[filename_length];
-    size_t fl_end = 0;
-
-	for (unsigned int i = 0; i < amount; i++){
-		buf = get_block_address(from, i);
-        dir = (Ext2FSDirEntry *)buf;
-
-        if (dir->name_length == filename_length){
-            // Este dir entry puede contener el filename buscado
-            // Cuantos bloques ocupa todo el dir_entry?
-            unsigned int bloques_ocupados = (unsigned int)dir->record_length / block_size;
-            if (bloques_ocupados == 0){
-                // Ocupa solo el bloque actual
-                // Comparemos filenames
-                if (strncmp(filename, dir->name, filename_length) == 0){
-                    return load_inode(dir->inode);
-                }
-                else{
-                    // Cabe otro dir entry en este bloque?
-                    // Puede haber mas de un dir entry por bloque?
-                    if (dir->record_length < block_size){
-                        // Quiza
-                    }
-                    else{
-                        // No
-                    }
-                }
-            }
-            else{
-                // Ocupa más de un bloque
-                // Copiamos la parte del string que tenemos en el bloque actual
-                // Deberia ser strlen - 1? Para sacar al \0 que haya al final(si es que hay)
-                while (fl_end < filename_length){
-                    // Usar strlen sobre dir->name asume que los pedazos del string en cada bloque tienen el terminador \0
-                    // De lo contrario, falla
-                    // Otra forma de obtener las longitudes parciales no se me ocurre
-                    strcpy(dir->name, buf_filename, strlen(dir->name));
-                    fl_end += strlen(dir->name);
-                    i += 1;
-                    buf = get_block_address(i);
-                    dir = (Ext2FSDirEntry *)buf; //Hace falta hacer esto de vuelta?
-                }
-            }
-        }
-	}
-    // Si llegamos aca, no encontramos nada con ese filename
     return NULL;
->>>>>>> b0b0625b43aeab37d1c7ea173b9a0e4bb7c1cdcb
 }
 
 fd_t Ext2FS::get_free_fd()
