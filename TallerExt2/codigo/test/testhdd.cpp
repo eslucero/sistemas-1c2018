@@ -59,18 +59,29 @@ int main(int argc, char ** argv)
 
 	//TODO: Completar el código del último ejercicio acá
 
+        std::cout<<"Empezando nuestro test"<<std::endl;
         fd_t f = fs->open("/grupos/gNUMERO/nota.txt", "r");
-        
+       
+        if (f == -1){
+            std::cout<<"ERROR: No encontro el archivo"<<std::endl;
+            return 1;
+        }
+
+        /*
+        std::cout<<"Paso 1 listo"<<std::endl;
         fs->seek(f, 14000);
         
-        char buf[50];
+        std::cout<<"Paso 2 listo"<<std::endl;
+        unsigned char buf[50];
         fs->read(f, buf, 50);
 
+        std::cout<<"Paso 3 listo"<<std::endl;
         for(int i = 0; i < 50; i++)
             std::cout<<buf[i];
         std::cout<<std::endl;
-
+        */
         fs->close(f);
 
+        std::cout<<"Fin test"<<std::endl;
 	return 0;
 }

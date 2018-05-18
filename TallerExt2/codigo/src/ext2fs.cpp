@@ -286,20 +286,20 @@ struct Ext2FSInode * Ext2FS::load_inode(unsigned int inode_number)
 
 	// Buscamos bloque correspondiente al inode
 	unsigned int block_group_id = blockgroup_for_inode(inode_number);
-	struct Ext2FSBlockGroupDescriptor * group_data = blockgroup(block_group_id);
+	Ext2FSBlockGroupDescriptor * group_data = block_group(block_group_id);
 	unsigned int offset = blockgroup_inode_index(inode_number);
 	unsigned int pos = group_data->inode_table + (offset / nodes_per_block);
- 	
+
  	// Cargamos el bloque en memoria
  	unsigned char buf[block_size];
  	read_block(pos, buf);
 
-	struct Ext2FSInode* res = new Ext2FSInode();
+	Ext2FSInode* res = new Ext2FSInode();
 
 	// Vemos en que parte del bloque se encuentra el inode buscado
 	unsigned int cual = offset % nodes_per_block;
 
-	memcopy(res, buf + _superblock->inode_size * cual, sizeof(Ext2FSInode));
+	memcpy(res, buf + _superblock->inode_size * cual, _superblock->inode_size);
 
 	return res;
 }
@@ -310,8 +310,9 @@ unsigned int Ext2FS::get_block_address(struct Ext2FSInode * inode, unsigned int 
 	//HACER SÓLO HASTA SEGUNDA INDIRECCIÓN
 	unsigned int block_size = 1024 << _superblock->log_block_size;
 	unsigned char buf[block_size];
-	if (block_number < 12)
+	if (block_number < 12){
 		return inode->block[block_number];
+        }
 
 	unsigned int add_per_block = block_size / sizeof(unsigned int);
 	if (block_number < 12 + add_per_block){
@@ -332,54 +333,78 @@ unsigned int Ext2FS::get_block_address(struct Ext2FSInode * inode, unsigned int 
 
 void Ext2FS::read_block(unsigned int block_address, unsigned char * buffer)
 {
-	unsigned int block_size = 1024 << _superblock->log_block_size;
-	unsigned int sectors_per_block = block_size / SECTOR_SIZE;
-	for(unsigned int i = 0; i < sectors_per_block; i++)
-		_hdd.read(blockaddr2sector(block_address)+i, buffer+i*SECTOR_SIZE);
-	}
+    unsigned int block_size = 1024 << _superblock->log_block_size;
+    unsigned int sectors_per_block = block_size / SECTOR_SIZE;
+    for(unsigned int i = 0; i < sectors_per_block; i++)
+	_hdd.read(blockaddr2sector(block_address)+i, buffer+i*SECTOR_SIZE);
+}
 
 struct Ext2FSInode * Ext2FS::get_file_inode_from_dir_inode(struct Ext2FSInode * from, const char * filename)
 {
-	if(from == NULL)
-		from = load_inode(EXT2_RDIR_INODE_NUMBER);
-	//std::cerr << *from << std::endl;
-	assert(INODE_ISDIR(from));
+    if(from == NULL)
+	from = load_inode(EXT2_RDIR_INODE_NUMBER);
+    //std::cerr << *from << std::endl;
+    assert(INODE_ISDIR(from));
 
-	//TODO: Ejercicio 3
-	unsigned int add_per_block = block_size / sizeof(unsigned int);
-	unsigned int amount = 12 + add_per_block + add_per_block * add_per_block;
-	unsigned int block_size = 1024 << _superblock->log_block_size;
+    //TODO: Ejercicio 3
+    // Constantes
+    unsigned int block_size = 1024 << _superblock->log_block_size;
+    unsigned int add_per_block = block_size / sizeof(unsigned int);
+    unsigned int amount = 12 + add_per_block + add_per_block*add_per_block;
 
-        Ext2FSDirEntry * dir;
+    // Valores busqueda
+    bool found = false;
+    unsigned int found_inode = 0;
 
-        int block_pos = 0;
-        while(block_pos < block_size){
-            unsigned char buf[block_size];
-            if (block_pos < 12){
-                read_block(from->block[block_pos], buf);
+    size_t len_filename = strlen(filename);
+
+    unsigned char * bloques_lista = new unsigned char[block_size * amount];
+     
+    std::cout<<"Creando lista de "<<amount<<" bloques ("<<block_size * amount<<" bytes)."<<std::endl;
+
+    // Traigo todos los bloques del nodo a memoria
+    for(unsigned int block_pos = 0;block_pos < amount;block_pos++)
+    {
+        unsigned int block_addr = get_block_address(from, block_pos);
+        read_block(block_addr, &bloques_lista[block_pos * block_size]);
+    }
+
+    std::cout<<"Lista de bloques obtenida"<<std::endl;
+
+    // Recorro los bloques linealmente
+    Ext2FSDirEntry * dir;
+    for(unsigned int block_pos = 0; block_pos < amount; block_pos++){
+        dir = (Ext2FSDirEntry*)&bloques_lista[block_pos * block_size];
+        if (dir->record_length > 0){
+
+            //std::cout<<*dir;
+
+            size_t size_name = dir->name_length * sizeof(char);
+            char* copia_name = new char[size_name + 1];
+
+            copia_name = (char*)memcpy((void*)copia_name, (const void*)&(dir->name), size_name);
+            copia_name[size_name] = '\0';
+
+            if (dir->name_length == len_filename && strncmp(copia_name, filename, len_filename) == 0){
+                std::cout<<"Encontramos el archivo"<<std::endl;
+                delete[] copia_name;
+                found_inode = dir->inode;
+                found = true;
+                break;
             }
-            else if (block_pos >= 12 && block_pos < 12 * add_per_block){
-                // 1er nivel de indireccion
-                read_block(from->block[12], buf);
-                unsigned int * table_entry = (unsigned int*)buf;
-                read_block(table_entry[block_pos - 12], buf);
-            }
-            else{
-                // 2do nivel de indireccion
-                read_block(from->block[13], buf);
-                unsigned int * table_entry = (unsigned int*)buf;
-                int indice_intermedio = (block_pos - 13)/add_per_block;
-                read_block(table_entry[indice_intermedio], buf);
-                table_entry = (unsigned int*)buf;
-                read_block(table_entry[block_pos - add_per_block * indice_intermedio], buf);
-            }
 
-            dir = (Ext2FSDirEntry *)buf;
-            if (strcmp(dir->name, filename) == 0)
-                return load_inode(dir->inode);
-            block_pos++;
+            delete[] copia_name;
         }
-    return NULL;
+    }
+
+    delete[] bloques_lista;
+
+    if (found)
+        return load_inode(found_inode);
+    else{
+        std::cout<<"ERROR: No se encontro el archivo"<<std::endl;
+        exit(1);
+    }
 }
 
 fd_t Ext2FS::get_free_fd()
@@ -395,14 +420,12 @@ fd_t Ext2FS::get_free_fd()
 
 void Ext2FS::mark_fd_as_used(fd_t fd)
 {
-
-	_fd_status[fd/sizeof(unsigned int)] = (_fd_status[fd/sizeof(unsigned int)] | (1 << (fd % sizeof(unsigned int))));
+    _fd_status[fd/sizeof(unsigned int)] = (_fd_status[fd/sizeof(unsigned int)] | (1 << (fd % sizeof(unsigned int))));
 }
 
 void Ext2FS::mark_fd_as_free(fd_t fd)
 {
-
-	_fd_status[fd/sizeof(unsigned int)] = (_fd_status[fd/sizeof(unsigned int)] ^ (1 << (fd % sizeof(unsigned int))));
+    _fd_status[fd/sizeof(unsigned int)] = (_fd_status[fd/sizeof(unsigned int)] ^ (1 << (fd % sizeof(unsigned int))));
 }
 
 fd_t Ext2FS::open(const char * path, const char * mode)
