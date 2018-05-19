@@ -8,6 +8,7 @@
 #include <atomic>
 #include <mpi.h>
 #include <map>
+#include <algorithm>
 
 int total_nodes, mpi_rank;
 Block *last_block_in_chain;
@@ -90,6 +91,26 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 void broadcast_block(const Block *block){
   //No enviar a mí mismo
   //TODO: Completar
+  int cant_nodos;
+  int nodos_mezclados[cant_nodos];
+  MPI_Comm_size(MPI_COMM_WORLD, &cant_nodos);
+
+  // Armo un arreglo con todos los ranks disponibles
+  for(int i = 0; i < cant_nodos;i++)
+      nodos_mezclados[i] = i;
+  // Los mezclamos para que cada nodo envie los mensajes en ordenes distintos
+  std::random_shuffle(std::begin(nodos_mezclados), std::end(nodos_mezclados));
+
+  const unsigned char* buf = (const unsigned char*)block;
+
+  int mi_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &mi_rank);
+
+  for(int i = 0;i < cant_nodos;i++){
+      if (nodos_mezclados[i] != mi_rank)
+        // Tiene que ser un send bloqueante? creo que no
+        MPI_Send(&buf, sizeof(Block), MPI_CHAR, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD);
+  }
 }
 
 //Proof of work
@@ -127,6 +148,7 @@ void* proof_of_work(void *ptr){
             printf("[%d] Agregué un producido con index %d \n",mpi_rank,last_block_in_chain->index);
 
             //TODO: Mientras comunico, no responder mensajes de nuevos nodos
+            // Habria que poner un semaforo compartido entre esta funcion y el while de node para cumplir esto?
             broadcast_block(last_block_in_chain);
           }
       }
@@ -157,9 +179,13 @@ int node(){
   memset(last_block_in_chain->previous_block_hash,0,HASH_SIZE);
 
   //TODO: Crear thread para minar
+  
+  pthread_t thread_minero;
+  pthead_create(&thread_minero, NULL, proof_of_work, NULL);
 
   while(true){
-
+        MPI_Status stat;
+        // Tenemos que definir la estructura de los mensajes primero? que transmitimos en los mensajes?
       //TODO: Recibir mensajes de otros nodos
 
       //TODO: Si es un mensaje de nuevo bloque, llamar a la función
@@ -169,6 +195,8 @@ int node(){
       //responderlo enviando los bloques correspondientes
 
   }
+
+  pthread_join(thread_minero);
 
   delete last_block_in_chain;
   return 0;
