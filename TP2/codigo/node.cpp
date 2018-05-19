@@ -13,6 +13,8 @@
 int total_nodes, mpi_rank;
 Block *last_block_in_chain;
 map<string,Block> node_blocks;
+int* nodos_mezclados = new int[total_nodes - 1];
+//atomic_int spinlock;
 
 //Cuando me llega una cadena adelantada, y tengo que pedir los nodos que me faltan
 //Si nos separan más de VALIDATION_BLOCKS bloques de distancia entre las cadenas, se descarta por seguridad
@@ -28,7 +30,6 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
   //sean válidos y se puedan acoplar a la cadena
     //delete []blockchain;
     //return true;
-
 
   delete []blockchain;
   return false;
@@ -89,25 +90,10 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 
 //Envia el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
-  //No enviar a mí mismo
-  //TODO: Completar
-  int cant_nodos;
-  int nodos_mezclados[cant_nodos];
-  MPI_Comm_size(MPI_COMM_WORLD, &cant_nodos);
-
-  // Armo un arreglo con todos los ranks disponibles
-  for(int i = 0; i < cant_nodos;i++)
-      nodos_mezclados[i] = i;
-  // Los mezclamos para que cada nodo envie los mensajes en ordenes distintos
-  std::random_shuffle(std::begin(nodos_mezclados), std::end(nodos_mezclados));
-
   const unsigned char* buf = (const unsigned char*)block;
 
-  int mi_rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &mi_rank);
-
-  for(int i = 0;i < cant_nodos;i++){
-      if (nodos_mezclados[i] != mi_rank)
+  for(int i = 0;i < total_nodes-1;i++){// No contiene al rank del nodo mismo
+      if (nodos_mezclados[i] != mpi_rank)
         // Tiene que ser un send bloqueante? creo que no
         MPI_Send(&buf, sizeof(Block), MPI_CHAR, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD);
   }
@@ -148,8 +134,9 @@ void* proof_of_work(void *ptr){
             printf("[%d] Agregué un producido con index %d \n",mpi_rank,last_block_in_chain->index);
 
             //TODO: Mientras comunico, no responder mensajes de nuevos nodos
-            // Habria que poner un semaforo compartido entre esta funcion y el while de node para cumplir esto?
+            // SECCION CRITICA
             broadcast_block(last_block_in_chain);
+            // FIN SECCION CRITICA
           }
       }
 
@@ -160,7 +147,6 @@ void* proof_of_work(void *ptr){
 
 
 int node(){
-
   //Tomar valor de mpi_rank y de nodos totales
   MPI_Comm_size(MPI_COMM_WORLD, &total_nodes);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
@@ -178,25 +164,44 @@ int node(){
   last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
   memset(last_block_in_chain->previous_block_hash,0,HASH_SIZE);
 
+  // Armo un arreglo con todos los ranks disponibles excepto el mio
+  int k = 0;
+  for(int i = 0; i < total_nodes;i++){
+      if (i != mpi_rank){
+        nodos_mezclados[k] = i;
+        k++;
+      }
+  }
+  // Los mezclamos para que cada nodo envie los mensajes en ordenes distintos
+  std::random_shuffle(&nodos_mezclados[0], &nodos_mezclados[total_nodes -2]);
+
   //TODO: Crear thread para minar
   
   pthread_t thread_minero;
-  pthead_create(&thread_minero, NULL, proof_of_work, NULL);
+  pthread_create(&thread_minero, NULL, proof_of_work, NULL);
 
+  unsigned char buffer[sizeof(Block)];
   while(true){
-        MPI_Status stat;
-        // Tenemos que definir la estructura de los mensajes primero? que transmitimos en los mensajes?
-      //TODO: Recibir mensajes de otros nodos
+      MPI_Status stat;
+      for(int i = 0;i < total_nodes-1; i++){
+          // Tenemos que definir la estructura de los mensajes primero? que transmitimos en los mensajes?
+          //TODO: Recibir mensajes de otros nodos
+          MPI_Recv(&buffer, sizeof(Block), MPI_CHAR, nodos_mezclados[i], MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+          if  (stat.MPI_TAG == TAG_NEW_BLOCK){
+            //TODO: Si es un mensaje de nuevo bloque, llamar a la función
+            // validate_block_for_chain con el bloque recibido y el estado de MPI
 
-      //TODO: Si es un mensaje de nuevo bloque, llamar a la función
-      // validate_block_for_chain con el bloque recibido y el estado de MPI
-
-      //TODO: Si es un mensaje de pedido de cadena,
-      //responderlo enviando los bloques correspondientes
-
+            // Aca va una seccion critica
+          }
+          else if (stat.MPI_TAG == TAG_CHAIN_HASH){
+            //TODO: Si es un mensaje de pedido de cadena,
+            //responderlo enviando los bloques correspondientes
+          
+          }
+      }
   }
 
-  pthread_join(thread_minero);
+  pthread_join(thread_minero, NULL);
 
   delete last_block_in_chain;
   return 0;
