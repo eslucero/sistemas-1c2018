@@ -235,7 +235,7 @@ int node(){
         MPI_Isend(&res, count * sizeof(Block), MPI_CHAR, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &req);
         // Request sirve para saber si el envío terminó (utilizando WAIT).
         // En un principio, no es necesario: el nodo que me pidió la lista no va a pedirmela devuelta antes de recibirla.
-        MPI_Request_Free(&req);
+        MPI_Request_free(&req);
       }
   }
 
