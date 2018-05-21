@@ -92,13 +92,16 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 
 //Envia el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
-  const unsigned char* buf = (const unsigned char*)block;
+  const unsigned char* buf = (const unsigned char*) block;
 
   for(int i = 0; i < total_nodes-1; i++){// No contiene al rank del nodo mismo
       if (nodos_mezclados[i] != mpi_rank)
-        // Tiene que ser un send bloqueante? creo que no
-        // Debería ser no bloqueante, pero hay que tener cuidado
-        MPI_Send(&buf, sizeof(Block), MPI_CHAR, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD);
+        // El tipo de datos es *MPI_BLOCK, no se en qué afecta esto pero hay que usarlo
+        // En un principio, no nos interesa ver si terminó de enviarse o no
+        // Podría ser que tengamos que guardar el req para no enviar otro nodo nuevo antes de que termine el anterior
+        MPI_Request req;
+        MPI_Isend(&buf, sizeof(Block), *MPI_BLOCK, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD, &req);
+        MPI_Request_free(&req);
   }
 }
 
@@ -116,25 +119,27 @@ void* proof_of_work(void *ptr){
       block.index += 1;
       block.node_owner_number = mpi_rank;
       block.difficulty = DEFAULT_DIFFICULTY;
-      memcpy(block.previous_block_hash,block.block_hash,HASH_SIZE);
+      memcpy(block.previous_block_hash, block.block_hash, HASH_SIZE);
 
       //Agregar un nonce al azar al bloque para intentar resolver el problema
       gen_random_nonce(block.nonce);
 
       //Hashear el contenido (con el nuevo nonce)
-      block_to_hash(&block,hash_hex_str);
+      block_to_hash(&block, hash_hex_str);
 
       //Contar la cantidad de ceros iniciales (con el nuevo nonce)
       if(solves_problem(hash_hex_str)){
 
           //Verifico que no haya cambiado mientras calculaba
           if(last_block_in_chain->index < block.index){
+          	// Todo esto no debería ser una sección crítica?
+          	// last_block_in_chain puede cambiar en el medio de esta ejecución
             mined_blocks += 1;
             *last_block_in_chain = block;
             strcpy(last_block_in_chain->block_hash, hash_hex_str.c_str());
             last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
             node_blocks[hash_hex_str] = *last_block_in_chain;
-            printf("[%d] Agregué un producido con index %d \n",mpi_rank,last_block_in_chain->index);
+            printf("[%d] Agregué un producido con index %d \n", mpi_rank, last_block_in_chain->index);
 
             //TODO: Mientras comunico, no responder mensajes de nuevos nodos
             // SECCION CRITICA
@@ -183,8 +188,8 @@ int node(){
   random_shuffle(&nodos_mezclados[0], &nodos_mezclados[total_nodes -2]);
 
   pthread_t thread_minero;
-  pthread_create(&thread_minero, NULL, proof_of_work, NULL);
   pthread_mutex_init(&mutex_nodo_nuevo, NULL);
+  pthread_create(&thread_minero, NULL, proof_of_work, NULL);
 
   char buffer[sizeof(Block)];
 
@@ -194,7 +199,7 @@ int node(){
       // Si tiene el tag TAG_CHAIN_HASH, significa que contiene un string del tamaño del hash (256 char)
       //TODO: Recibir mensajes de otros nodos
       // Idea: me bloqueo esperando el mensaje de CUALQUIER nodo
-      MPI_Recv(&buffer, sizeof(Block), MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+      MPI_Recv(&buffer, sizeof(Block), *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
       if (stat.MPI_TAG == TAG_NEW_BLOCK){
         //TODO: Si es un mensaje de nuevo bloque, llamar a la función
         // validate_block_for_chain con el bloque recibido y el estado de MPI
@@ -211,6 +216,7 @@ int node(){
             // Hay que setear previous_block_chain o conservamos el que se copia?
             memcpy(last_block_in_chain->previous_block_hash, prev->block_hash, HASH_SIZE);
             // Hay que agregarlo al map?
+            // Casi seguro que sí
             node_blocks[string(last_block_in_chain->block_hash)] = *last_block_in_chain;
         }
 
