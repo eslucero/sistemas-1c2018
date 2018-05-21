@@ -15,8 +15,8 @@ using namespace std;
 int total_nodes, mpi_rank;
 Block *last_block_in_chain;
 map<string, Block> node_blocks;
-int* nodos_mezclados = new int[total_nodes - 1];
-//atomic_int spinlock;
+int* nodos_mezclados;
+pthread_mutex_t mutex_nodo_nuevo;
 
 //Cuando me llega una cadena adelantada, y tengo que pedir los nodos que me faltan
 //Si nos separan más de VALIDATION_BLOCKS bloques de distancia entre las cadenas, se descarta por seguridad
@@ -138,7 +138,9 @@ void* proof_of_work(void *ptr){
 
             //TODO: Mientras comunico, no responder mensajes de nuevos nodos
             // SECCION CRITICA
+            pthread_mutex_lock(&mutex_nodo_nuevo);
             broadcast_block(last_block_in_chain);
+            pthread_mutex_unlock(&mutex_nodo_nuevo);
             // FIN SECCION CRITICA
           }
       }
@@ -150,6 +152,7 @@ void* proof_of_work(void *ptr){
 
 
 int node(){
+  nodos_mezclados = new int[total_nodes - 1];// Movi esto aca porque tiraba error feo al correr, no se si lo sigue haciendo
   //Tomar valor de mpi_rank y de nodos totales
   MPI_Comm_size(MPI_COMM_WORLD, &total_nodes);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
@@ -179,14 +182,12 @@ int node(){
   // Se puede hacer enviando a la "derecha" de cada uno
   random_shuffle(&nodos_mezclados[0], &nodos_mezclados[total_nodes -2]);
 
-  //TODO: Crear thread para minar
-  
   pthread_t thread_minero;
   pthread_create(&thread_minero, NULL, proof_of_work, NULL);
+  pthread_mutex_init(&mutex_nodo_nuevo, NULL);
 
-  // Creo que es mejor usar char y no unsigned char por los casos donde nos pasan un hash
-  // Ya que en block.h, block_hash es un arreglo de char y no unsigned char (no sé qué cambia)
   char buffer[sizeof(Block)];
+
   while(true){
       MPI_Status stat;
       // Tenemos que definir la estructura de los mensajes primero? que transmitimos en los mensajes?
@@ -198,15 +199,30 @@ int node(){
         //TODO: Si es un mensaje de nuevo bloque, llamar a la función
         // validate_block_for_chain con el bloque recibido y el estado de MPI
         // Aca va una seccion critica
+        pthread_mutex_lock(&mutex_nodo_nuevo);
+
+        // Hay que validar el bloque
+        Block * b = (Block*)buffer;
+        if (validate_block_for_chain(b, &stat)){
+            // Hay que agregar este bloque a la cadena
+            Block * prev = last_block_in_chain;
+            last_block_in_chain = new Block;
+            memcpy(last_block_in_chain, b, sizeof(Block));
+            // Hay que setear previous_block_chain o conservamos el que se copia?
+            memcpy(last_block_in_chain->previous_block_hash, prev->block_hash, HASH_SIZE);
+            // Hay que agregarlo al map?
+            node_blocks[string(last_block_in_chain->block_hash)] = *last_block_in_chain;
+        }
+
+        pthread_mutex_unlock(&mutex_nodo_nuevo);
       }
       else if (stat.MPI_TAG == TAG_CHAIN_HASH){
         //TODO: Si es un mensaje de pedido de cadena,
         //responderlo enviando los bloques correspondientes
 
         // Esto se puede hacer en C++11
-        string hash_buscado = buffer;
-        // No se me ocurrió una mejor manera de quedarme con los primeros 256 bytes
-        hash_buscado.resize(HASH_SIZE);
+        string hash_buscado(buffer, HASH_SIZE);
+
         // La respuesta es un arreglo con la maxima cantidad de bloques que se pasan
         // De ser necesario, el que recibe puede verificar cuantos bytes se recibieron
         Block res[VALIDATION_BLOCKS];
@@ -215,6 +231,7 @@ int node(){
         if (it == node_blocks.end()){
           // El hash buscado no está
           // Preguntar qué hacer en este caso
+          // Devolver un bloque vacio con index = -1?
         }
         int count = 0;
         Block actual = it->second;
@@ -223,7 +240,7 @@ int node(){
         while (count < VALIDATION_BLOCKS && actual.index > 1){
           string anterior = actual.previous_block_hash;
           it = node_blocks.find(anterior);
-          // Esto se hace por copia? Necesitamos que sea por copia
+
           res[count] = it->second;
           actual = it->second;
 
@@ -240,8 +257,10 @@ int node(){
   }
 
   pthread_join(thread_minero, NULL);
-
+  pthread_mutex_destroy(&mutex_nodo_nuevo);
+  
   delete last_block_in_chain;
+  delete[] nodos_mezclados;
   return 0;
 }
 
