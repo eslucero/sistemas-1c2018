@@ -205,24 +205,24 @@ int node(){
   pthread_mutex_init(&mutex_nodo_nuevo, NULL);
   pthread_create(&thread_minero, NULL, proof_of_work, NULL);
 
-  char buffer[sizeof(Block)];
-
   while(true){
       MPI_Status stat;
       //TODO: Recibir mensajes de otros nodos
-      // Idea: me bloqueo esperando el mensaje de CUALQUIER nodo
-      // Nota: count (segundo parámetro) es la cantidad de elementos de ese datatype
-      // "Primitive data types are contiguous.
-      // Derived data types allow you to specify non-contiguous data in a convenient manner and to treat it as though it was contiguous."
-      MPI_Recv(&buffer, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+      // Idea: primero veo qué mensaje voy a recibir
+      MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
       if (stat.MPI_TAG == TAG_NEW_BLOCK){
         //TODO: Si es un mensaje de nuevo bloque, llamar a la función
         // validate_block_for_chain con el bloque recibido y el estado de MPI
-        // Aca va una seccion critica
+
+      	// Por las dudas hago que el buffer sea del mismo tipo de dato
+      	Block buffer;
+
+        // Nota: count (segundo parámetro) es la cantidad de elementos de ese datatype
+        MPI_Recv(&buffer, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
         pthread_mutex_lock(&mutex_nodo_nuevo);
 
         // Hay que validar el bloque
-        Block * b = (Block*)buffer;
+        Block * b = &buffer;
         if (validate_block_for_chain(b, &stat)){
             // Hay que agregar este bloque a la cadena
             // La función validate_block_for_chain ya hace los cambios necesarios.
@@ -245,6 +245,8 @@ int node(){
         //TODO: Si es un mensaje de pedido de cadena,
         //responderlo enviando los bloques correspondientes
 
+      	char buffer[HASH_SIZE];
+      	MPI_Recv(&buffer, HASH_SIZE, MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
         // Esto se puede hacer en C++11
         string hash_buscado(buffer, HASH_SIZE);
 
