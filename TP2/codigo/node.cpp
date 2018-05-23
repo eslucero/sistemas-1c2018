@@ -113,7 +113,7 @@ void broadcast_block(const Block *block){
       	// Espero a que haya finalizado el envío anterior.
       	// Si el request es NULL, devuelve error pero sigue de largo.
       	MPI_Wait(&envios[i], &stat);
-        MPI_Isend(&buf, sizeof(Block), *MPI_BLOCK, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD, &envios[i]);
+        MPI_Isend(&buf, 1, *MPI_BLOCK, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD, &envios[i]);
     }
   }
 }
@@ -143,11 +143,9 @@ void* proof_of_work(void *ptr){
       //Contar la cantidad de ceros iniciales (con el nuevo nonce)
       if(solves_problem(hash_hex_str)){
 
-          //Verifico que no haya cambiado mientras calculaba
-      	  // Todo esto no debería ser una sección crítica?
-          // last_block_in_chain puede cambiar en el medio de esta ejecución
       	  // SECCION CRITICA
       	  pthread_mutex_lock(&mutex_nodo_nuevo);
+      	  //Verifico que no haya cambiado mientras calculaba
           if (last_block_in_chain->index < block.index){
             mined_blocks += 1;
             *last_block_in_chain = block;
@@ -211,11 +209,12 @@ int node(){
 
   while(true){
       MPI_Status stat;
-      // Tenemos que definir la estructura de los mensajes primero? que transmitimos en los mensajes?
-      // Si tiene el tag TAG_CHAIN_HASH, significa que contiene un string del tamaño del hash (256 char)
       //TODO: Recibir mensajes de otros nodos
       // Idea: me bloqueo esperando el mensaje de CUALQUIER nodo
-      MPI_Recv(&buffer, sizeof(Block), *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+      // Nota: count (segundo parámetro) es la cantidad de elementos de ese datatype
+      // "Primitive data types are contiguous.
+      // Derived data types allow you to specify non-contiguous data in a convenient manner and to treat it as though it was contiguous."
+      MPI_Recv(&buffer, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
       if (stat.MPI_TAG == TAG_NEW_BLOCK){
         //TODO: Si es un mensaje de nuevo bloque, llamar a la función
         // validate_block_for_chain con el bloque recibido y el estado de MPI
@@ -250,32 +249,28 @@ int node(){
         string hash_buscado(buffer, HASH_SIZE);
 
         // La respuesta es un arreglo con la maxima cantidad de bloques que se pasan
-        // De ser necesario, el que recibe puede verificar cuantos bytes se recibieron
+        // De ser necesario, el que recibe puede verificar cuantos elementos se recibieron
         Block res[VALIDATION_BLOCKS];
 
-        map<string, Block>::iterator it = node_blocks.find(hash_buscado);
-        if (it == node_blocks.end()){
-          // El hash buscado no está
-          // Preguntar qué hacer en este caso
-          // Devolver un bloque vacio con index = -1?
-        }
+        // El hash siempre va a estar porque es el nodo que broadcasteamos
+        map<string, Block>::iterator actual = node_blocks.find(hash_buscado);
         int count = 0;
-        Block actual = it->second;
-        // Cargo los VALIDATION_BLOCKS bloques o hasta llegar al principio de la lista
-        // El primero del arreglo es el último
-        while (count < VALIDATION_BLOCKS && actual.index > 1){
-          string anterior = actual.previous_block_hash;
-          it = node_blocks.find(anterior);
 
-          res[count] = it->second;
-          actual = it->second;
+        // El bloque que me pidieron tiene que estar incluido en la lista; es el primero
+        res[count] = actual->second;
+        count++;
+        // Cargo los VALIDATION_BLOCKS bloques o hasta llegar al principio de la lista
+        while (count < VALIDATION_BLOCKS && (actual->second).index > 1){
+          string anterior = (actual->second).previous_block_hash;
+          actual = node_blocks.find(anterior);
+          res[count] = actual->second;
 
           count++;
         }
 
         MPI_Request req;
         // Envío la lista al que me lo pidió
-        MPI_Isend(&res, count * sizeof(Block), MPI_CHAR, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &req);
+        MPI_Isend(&res, count, *MPI_BLOCK, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &req);
         // Request sirve para saber si el envío terminó (utilizando WAIT).
         // En un principio, no es necesario: el nodo que me pidió la lista no va a pedirmela devuelta antes de recibirla.
         MPI_Request_free(&req);
