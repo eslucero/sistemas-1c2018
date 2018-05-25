@@ -25,17 +25,96 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 
   //TODO: Enviar mensaje TAG_CHAIN_HASH
 
+  // ¿Por qué reservan nueva memoria, en lugar de hacer Block blockchain[VALIDATION_BLOCKS]?
+  // ¿Capaz no entra en el stack?
+  // ¿Tendremos que hacer lo mismo con la respuesta (Block *res = new Block[VALIDATION_BLOCKS])?
+  // (En ese caso, cuidado de no liberar la memoria antes de que se haya copiado al buffer del otro)
   Block *blockchain = new Block[VALIDATION_BLOCKS];
 
+  char buffer[HASH_SIZE] = rBlock->block_hash;
+  MPI_Send(&buffer, HASH_SIZE, MPI_CHAR, TAG_CHAIN_HASH, status->MPI_SOURCE, MPI_COMM_WORLD);
+
   //TODO: Recibir mensaje TAG_CHAIN_RESPONSE
+  MPI_Status stat;
+  MPI_Recv(blockchain, VALIDATION_BLOCKS, *MPI_BLOCK, TAG_CHAIN_RESPONSE, status->MPI_SOURCE, MPI_COMM_WORLD, &stat);
+  // Veo cuántos elementos me enviaron
+  int count;
+  MPI_Get_count(&stat, *MPI_BLOCK, &count);
+  printf("[%d] Recibí %d bloques de %d \n", mpi_rank, count, stat.MPI_SOURCE);
+  // count siempre debería ser mayor o igual a 1.
+  if (count <= 0){
+  	delete []blockchain;
+  	return false;
+  }
 
   //TODO: Verificar que los bloques recibidos
   //sean válidos y se puedan acoplar a la cadena
-    //delete []blockchain;
-    //return true;
+  // Primer caso: el primer bloque corresponde al que recibí (rBlock)
+  if (blockchain[0].index != rBlock->index || string(blockchain[0].block_hash) != string(rBlock->block_hash)){
+  	printf("[%d] El primer bloque no coincide con el enviado por %d \n", mpi_rank, stat.MPI_SOURCE);
+  	delete []blockchain;
+  	return false;
+  }
+  // Segundo caso: el hash del bloque recibido es igual al calculado por la función block_to_hash
+  string str_hash;
+  block_to_hash(&blockchain[0], str_hash);
+  if (string(blockchain[0].block_hash) != str_hash){
+  	printf("[%d] No coincide el hash calculado con el escrito por %d \n", mpi_rank, stat.MPI_SOURCE);
+  	delete []blockchain;
+  	return false;  	
+  }
+  // Tercer caso: el previous_block_hash efectivamente contiene el hash del anterior
+  for (int i = 0; i < count - 1; i++){
+  	if (string(blockchain[i].previous_block_hash) != string(blockchain[i + 1].block_hash)){
+		printf("[%d] Hash anteriores no coincidentes en cadena enviada por %d \n", mpi_rank, stat.MPI_SOURCE); 
+		delete []blockchain;
+  		return false;  
+  	}
+  	// Cuarto caso: índices consecutivos
+  	if (blockchain[i].index != blockchain[i + 1].index + 1){
+		printf("[%d] Índices no consecutivos en cadena enviada por %d \n", mpi_rank, stat.MPI_SOURCE); 
+		delete []blockchain;
+  		return false;  
+  	}
+  }
+
+  // Si ninguno de los bloques estaba en mi cadena (o nos separan más de VALIDATION_BLOCKS) y el último no tiene índice 1, descarto la cadena
+  int primero = -1;
+  for (int i = 0; i < count; i++){
+  	map<string, Block>::iterator it = node_blocks.find(string(last_block_in_chain->block_hash));
+  	string anterior;
+  	for (int j = 0; j < VALIDATION_BLOCKS; j++){
+  		if (it->first == string(blockchain[i].block_hash)){
+  			primero = i;
+  			break;
+  		}
+  		anterior = string((it->second).previous_block_hash);
+  		it = node_blocks.find(anterior);
+  	}
+  }
+  if (primero < 0){
+  	// No tengo a ninguno; me fijo si el índice del último es 1
+  	if (blockchain[count - 1].index > 1){
+ 		printf("[%d] Cadena insegura enviada por %d \n", mpi_rank, stat.MPI_SOURCE); 
+		delete []blockchain;
+  		return false;   		
+  	} else{
+  		// El último tiene índice 1
+  		primero = count;
+  	}
+  }
+  // Le resto uno porque primero apunta al que ya tengo; si no tenía ninguno, vale count
+  primero--;
+  // Agrego todos los nodos que me faltan
+  // El primero de la lista ya estaba definido (y capaz otro también); lo estoy definiendo dos veces!
+  // No lo tomo como error porque asumo que se sobreescribe
+  for (int i = primero; i >= 0; i--)
+  	node_blocks[string(blockchain[i].block_hash)] = blockchain[i];
+
+  *last_block_in_chain = blockchain[0];
 
   delete []blockchain;
-  return false;
+  return true;
 }
 
 //Verifica que el bloque tenga que ser incluido en la cadena, y lo agrega si corresponde
@@ -168,13 +247,14 @@ void* proof_of_work(void *ptr){
 
 
 int node(){
-  nodos_mezclados = new int[total_nodes - 1];// Movi esto aca porque tiraba error feo al correr, no se si lo sigue haciendo
-  envios = new MPI_Request[total_nodes - 1];
-  for (int i = 0; i < total_nodes - 1; i++) // Por las dudas
-  	envios[i] = NULL;
   //Tomar valor de mpi_rank y de nodos totales
   MPI_Comm_size(MPI_COMM_WORLD, &total_nodes);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+
+  nodos_mezclados = new int[total_nodes - 1];
+  envios = new MPI_Request[total_nodes - 1];
+  for (int i = 0; i < total_nodes - 1; i++) // Por las dudas
+  	envios[i] = NULL;
 
   //La semilla de las funciones aleatorias depende del mpi_ranking
   srand(time(NULL) + mpi_rank);
