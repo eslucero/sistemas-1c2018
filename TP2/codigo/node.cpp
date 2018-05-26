@@ -31,7 +31,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
   // (En ese caso, cuidado de no liberar la memoria antes de que se haya copiado al buffer del otro)
   Block *blockchain = new Block[VALIDATION_BLOCKS];
 
-  char buffer[HASH_SIZE] = rBlock->block_hash;
+  const char * buffer = rBlock->block_hash;
   MPI_Send(&buffer, HASH_SIZE, MPI_CHAR, TAG_CHAIN_HASH, status->MPI_SOURCE, MPI_COMM_WORLD);
 
   //TODO: Recibir mensaje TAG_CHAIN_RESPONSE
