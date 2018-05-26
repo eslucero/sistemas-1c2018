@@ -212,7 +212,7 @@ void* proof_of_work(void *ptr){
    	  // Verifico si ya alcancé el máximo de bloques
       if (last_block_in_chain->index >= BLOCKS_TO_MINE){
       	printf("[%u] Ya alcancé el final de la lista \n", mpi_rank);
-      	return NULL;
+        pthread_exit(NULL);
       }
 
       block = *last_block_in_chain;
@@ -251,7 +251,7 @@ void* proof_of_work(void *ptr){
       }
 
     }
-    return NULL;
+    pthread_exit(NULL);
 }
 
 
@@ -369,7 +369,6 @@ int node(){
         MPI_Send(&res, count, *MPI_BLOCK, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
       }
   }
-
   pthread_join(thread_minero, NULL);
   pthread_mutex_destroy(&mutex_nodo_nuevo);
   
