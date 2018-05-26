@@ -7,6 +7,7 @@
 #define TAG_NEW_BLOCK 10
 #define TAG_CHAIN_HASH 21
 #define TAG_CHAIN_RESPONSE 22
+#define TAG_END_CHAIN 30
 #define MAX_BLOCKS 200
 
 extern MPI_Datatype* MPI_BLOCK;
