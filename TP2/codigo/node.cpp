@@ -188,9 +188,6 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 
 //Envia el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
-  const unsigned char* buf = (const unsigned char*) block;
-  //MPI_Status stat;
-
   for(int i = 0; i < total_nodes - 1; i++){ // No contiene al rank del nodo mismo
       if (nodos_mezclados[i] != mpi_rank){
       	// "It is unsafe to modify the application buffer (your variable space) until you know for a fact the requested non-blocking operation was actually performed by the library.
@@ -200,7 +197,7 @@ void broadcast_block(const Block *block){
         //MPI_Isend(&buf, 1, *MPI_BLOCK, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD, &envios[i]);
 
         // Lo hago bloqueante hasta que se nos ocurra cómo hacer.
-        MPI_Send(&buf, 1, *MPI_BLOCK, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD);
+        MPI_Send(block, 1, *MPI_BLOCK, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD);
     }
   }
 }
