@@ -24,11 +24,6 @@ pthread_mutex_t mutex_nodo_nuevo;
 bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 
   //TODO: Enviar mensaje TAG_CHAIN_HASH
-
-  // ¿Por qué reservan nueva memoria, en lugar de hacer Block blockchain[VALIDATION_BLOCKS]?
-  // ¿Capaz no entra en el stack?
-  // ¿Tendremos que hacer lo mismo con la respuesta (Block *res = new Block[VALIDATION_BLOCKS])?
-  // (En ese caso, cuidado de no liberar la memoria antes de que se haya copiado al buffer del otro)
   Block *blockchain = new Block[VALIDATION_BLOCKS];
 
   printf("[%u] Pido lista a %d a partir de %u \n", mpi_rank, status->MPI_SOURCE, rBlock->index);
@@ -176,7 +171,7 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
     //TODO: Si el índice del bloque recibido está más de una posición adelantada a mi último bloque actual,
     //entonces me conviene abandonar mi blockchain actual
     if (rBlock->index > last_block_in_chain->index + 1){
-    	printf("[%u] Perdí la carrera por varios contra %d \n", mpi_rank, status->MPI_SOURCE);
+    	printf("[%u] Perdí la carrera por varios (%u) contra %d \n", mpi_rank, rBlock->index, status->MPI_SOURCE);
     	bool res = verificar_y_migrar_cadena(rBlock,status);
     	return res;
     }
@@ -317,7 +312,7 @@ int node(){
       	Block buffer;
 
         // Nota: count (segundo parámetro) es la cantidad de elementos de ese datatype
-        MPI_Recv(&buffer, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+        MPI_Recv(&buffer, 1, *MPI_BLOCK, stat.MPI_SOURCE, TAG_NEW_BLOCK, MPI_COMM_WORLD, &stat);
         pthread_mutex_lock(&mutex_nodo_nuevo);
 
         // Hay que validar el bloque
@@ -343,14 +338,13 @@ int node(){
         //responderlo enviando los bloques correspondientes
 
       	char buffer[HASH_SIZE];
-      	MPI_Recv(buffer, HASH_SIZE, MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+      	MPI_Recv(buffer, HASH_SIZE, MPI_CHAR, stat.MPI_SOURCE, TAG_CHAIN_HASH, MPI_COMM_WORLD, &stat);
       	printf("[%u] Recibí pedido de lista de %d \n", mpi_rank, stat.MPI_SOURCE);
         // Esto se puede hacer en C++11
         string hash_buscado(buffer);
         
         // La respuesta es un arreglo con la maxima cantidad de bloques que se pasan
-        // De ser necesario, el que recibe puede verificar cuantos elementos se recibieron
-        Block res[VALIDATION_BLOCKS];
+        Block *res = new Block[VALIDATION_BLOCKS];
 
         // El hash siempre va a estar porque es el nodo que broadcasteamos
         map<string, Block>::iterator actual = node_blocks.find(hash_buscado);
@@ -380,7 +374,8 @@ int node(){
         printf("[%u] Envío %d bloques a %d \n", mpi_rank, count, stat.MPI_SOURCE);
 
         // Envío la lista al que me lo pidió
-        MPI_Send(&res, count, *MPI_BLOCK, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
+        MPI_Send(res, count, *MPI_BLOCK, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
+        delete []res;
       }
       else if (stat.MPI_TAG == TAG_CHAIN_END){
           break;
