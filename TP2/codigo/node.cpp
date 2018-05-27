@@ -17,7 +17,7 @@ Block *last_block_in_chain;
 map<string, Block> node_blocks;
 int* nodos_mezclados;
 pthread_mutex_t mutex_nodo_nuevo;
-atomic_bool fin_cadena;
+//atomic_bool fin_cadena;
 
 //Cuando me llega una cadena adelantada, y tengo que pedir los nodos que me faltan
 //Si nos separan más de VALIDATION_BLOCKS bloques de distancia entre las cadenas, se descarta por seguridad
@@ -213,9 +213,9 @@ void* proof_of_work(void *ptr){
    	  // Verifico si ya alcancé el máximo de bloques
       if (last_block_in_chain->index >= BLOCKS_TO_MINE){
       	printf("[%u] Ya alcancé el final de la lista \n", mpi_rank);
-        fin_cadena.store(true);
-        //char buf = '\0'; // Para poner algo
-        //MPI_Send(&buf, 1, MPI_CHAR, mpi_rank, TAG_END_CHAIN, MPI_COMM_WORLD);
+        //fin_cadena.store(true);
+        char buf = '\0'; // Para poner algo
+        MPI_Send(&buf, 1, MPI_CHAR, mpi_rank, TAG_CHAIN_END, MPI_COMM_WORLD);
         pthread_exit(NULL);
       }
 
@@ -265,7 +265,7 @@ int node(){
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
   nodos_mezclados = new int[total_nodes - 1];
-  fin_cadena.store(false);
+  //fin_cadena.store(false);
   //La semilla de las funciones aleatorias depende del mpi_ranking
   srand(time(NULL) + mpi_rank);
   printf("[MPI] Lanzando proceso %u\n", mpi_rank);
@@ -296,18 +296,18 @@ int node(){
   pthread_create(&thread_minero, NULL, proof_of_work, NULL);
 
   while(true){
-      int flag;
+      //int flag;
       MPI_Status stat;
       //TODO: Recibir mensajes de otros nodos
       // Idea: primero veo qué mensaje voy a recibir
-      //MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
-      do{
-        MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &stat);
-      }
-      while(!flag && !fin_cadena.load());
+      MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+      //do{
+        //MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &stat);
+      //}
+      //while(!flag && !fin_cadena.load());
 
-      if(fin_cadena.load())
-          break;
+      //if(fin_cadena.load())
+          //break;
 
       if (stat.MPI_TAG == TAG_NEW_BLOCK){
         //TODO: Si es un mensaje de nuevo bloque, llamar a la función
@@ -330,7 +330,7 @@ int node(){
             // Esta verificación también debería estar cuando minamos, probablemente.
             if (last_block_in_chain->index >= BLOCKS_TO_MINE){
             	printf("[%u] Me llegó una lista completa \n", mpi_rank);
-                fin_cadena.store(true);
+                //fin_cadena.store(true);
             	pthread_mutex_unlock(&mutex_nodo_nuevo);
             	break;
             }
@@ -381,6 +381,9 @@ int node(){
 
         // Envío la lista al que me lo pidió
         MPI_Send(&res, count, *MPI_BLOCK, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
+      }
+      else if (stat.MPI_TAG == TAG_CHAIN_END){
+          break;
       }
   }
   pthread_join(thread_minero, NULL);
