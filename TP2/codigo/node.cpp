@@ -207,10 +207,10 @@ void* proof_of_work(void *ptr){
     while(true){
    	  // Verifico si ya alcancé el máximo de bloques
       if (last_block_in_chain->index >= BLOCKS_TO_MINE){
-      	printf("[%u] Ya alcancé el final de la lista \n", mpi_rank);
+      	printf("[%u] Ya alcancé el final de la lista, dejo de minar \n", mpi_rank);
         //fin_cadena.store(true);
-        char buf = '\0'; // Para poner algo
-        MPI_Send(&buf, 1, MPI_CHAR, mpi_rank, TAG_CHAIN_END, MPI_COMM_WORLD);
+        //char buf = '\0'; // Para poner algo
+        //MPI_Send(&buf, 1, MPI_CHAR, mpi_rank, TAG_CHAIN_END, MPI_COMM_WORLD);
         pthread_exit(NULL);
       }
 
@@ -220,6 +220,7 @@ void* proof_of_work(void *ptr){
       block.index += 1;
       block.node_owner_number = mpi_rank;
       block.difficulty = DEFAULT_DIFFICULTY;
+      block.created_at = static_cast<unsigned long int> (time(NULL));
       memcpy(block.previous_block_hash, block.block_hash, HASH_SIZE);
 
       //Agregar un nonce al azar al bloque para intentar resolver el problema
@@ -238,7 +239,6 @@ void* proof_of_work(void *ptr){
             mined_blocks += 1;
             *last_block_in_chain = block;
             strcpy(last_block_in_chain->block_hash, hash_hex_str.c_str());
-            last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
             node_blocks[hash_hex_str] = *last_block_in_chain;
             printf("[%u] Agregué un producido con index %u \n", mpi_rank, last_block_in_chain->index);
 
@@ -327,7 +327,8 @@ int node(){
             	printf("[%u] Me llegó una lista completa \n", mpi_rank);
                 //fin_cadena.store(true);
             	pthread_mutex_unlock(&mutex_nodo_nuevo);
-            	break;
+                continue;
+            	//break;
             }
         }
 
@@ -377,9 +378,9 @@ int node(){
         MPI_Send(res, count, *MPI_BLOCK, stat.MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
         delete []res;
       }
-      else if (stat.MPI_TAG == TAG_CHAIN_END){
-          break;
-      }
+      //else if (stat.MPI_TAG == TAG_CHAIN_END){
+      //    break;
+      //}
   }
   pthread_join(thread_minero, NULL);
   pthread_mutex_destroy(&mutex_nodo_nuevo);
