@@ -74,6 +74,9 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
   }
 
   // Si ninguno de los bloques estaba en mi cadena (o nos separan más de VALIDATION_BLOCKS) y el último no tiene índice 1, descarto la cadena
+  // Idea: comienzo con un índice irreal. Si mantiene su valor, significa que ninguno de los bloques estaban en mi cadena.
+  // Para recorrer, siempre comienzo desde el último bloque de mi cadena, e itero hacia atrás VALIDATION_BLOCKS veces. 
+  // No es necesario recorrer toda la cadena porque recibo una lista de tamaño VALIDATION_BLOCKS, por lo tanto si alguno se encuentra, va a estar dentro de ese rango.
   int primero = -1;
   for (int i = 0; i < count; i++){
   	// Siempre comienzo desde el final de mi cadena
@@ -110,6 +113,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
   for (int i = primero; i >= 0; i--)
   	node_blocks[string(blockchain[i].block_hash)] = blockchain[i];
 
+  // Defino al primero como último bloque; recordar que el primero es equivalente a rBlock.
   *last_block_in_chain = blockchain[0];
 
   delete []blockchain;
@@ -183,11 +187,10 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 
 // Envia el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
+  // nodos_mezclados contiene un orden aleatorio de los ranks de los demás nodos.
   for(int i = 0; i < total_nodes - 1; i++){ // No contiene al rank del nodo mismo
-      if (nodos_mezclados[i] != mpi_rank){
-        // Lo hago bloqueante hasta que se nos ocurra cómo hacer.
+      if (nodos_mezclados[i] != mpi_rank)
         MPI_Send(block, 1, *MPI_BLOCK, nodos_mezclados[i], TAG_NEW_BLOCK, MPI_COMM_WORLD);
-    }
   }
 }
 
@@ -250,7 +253,6 @@ int node(){
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
   nodos_mezclados = new int[total_nodes - 1];
-  // fin_cadena.store(false);
   // La semilla de las funciones aleatorias depende del mpi_ranking
   srand(time(NULL) + mpi_rank);
   printf("[MPI] Lanzando proceso %u\n", mpi_rank);
@@ -290,10 +292,9 @@ int node(){
         // Si es un mensaje de nuevo bloque, llamar a la función
         // validate_block_for_chain con el bloque recibido y el estado de MPI
 
-      	// Por las dudas hago que el buffer sea del mismo tipo de dato
+      	// Hago que el buffer sea del mismo tipo de dato
       	Block buffer;
 
-        // Nota: count (segundo parámetro) es la cantidad de elementos de ese datatype
         MPI_Recv(&buffer, 1, *MPI_BLOCK, stat.MPI_SOURCE, TAG_NEW_BLOCK, MPI_COMM_WORLD, &stat);
         pthread_mutex_lock(&mutex_nodo_nuevo);
 
@@ -301,14 +302,10 @@ int node(){
         if (validate_block_for_chain(&buffer, &stat)){
             // Hay que agregar este bloque a la cadena
             // La función validate_block_for_chain ya hace los cambios necesarios.
-            // Si devuelve false, no habría que hacer nada.
-            // Si devuelve true, deberíamos ver si ya aceptamos una cadena de largo BLOCKS_TO_MINE y terminar la ejecución.
-            // Esta verificación también debería estar cuando minamos, probablemente.
-            if (last_block_in_chain->index >= BLOCKS_TO_MINE){
+            // Verifico si ya aceptamos una cadena de largo BLOCKS_TO_MINE-
+            // Sigo corriendo para responder eventuales mensajes
+            if (last_block_in_chain->index >= BLOCKS_TO_MINE)
             	printf("\e[38;2;255;0;0m[%u] Me llegó una lista completa \e[0m \n", mpi_rank);
-            	pthread_mutex_unlock(&mutex_nodo_nuevo);
-                continue;
-            }
         }
 
         pthread_mutex_unlock(&mutex_nodo_nuevo);
@@ -328,8 +325,6 @@ int node(){
 
         // El hash siempre va a estar porque es el nodo que broadcasteamos
         map<string, Block>::iterator actual = node_blocks.find(hash_buscado);
-        if (actual == end(node_blocks))
-        	printf("[%u] El bloque pedido por %d no lo tengo \n", mpi_rank, stat.MPI_SOURCE);
         int count = 0;
 
         // El bloque que me pidieron tiene que estar incluido en la lista; es el primero
