@@ -4,11 +4,8 @@
 #include <string.h>
 #include <pthread.h>
 #include <cstdlib>
-#include <queue>
-#include <atomic>
 #include <mpi.h>
 #include <map>
-#include <algorithm>
 
 using namespace std;
 
@@ -267,16 +264,17 @@ int node(){
   memset(last_block_in_chain->previous_block_hash, 0, HASH_SIZE);
 
   // Armo un arreglo con todos los ranks disponibles excepto el mio
+  // Primero poniendo los ranks mayores al mio de menor a mayor
+  // Luego los menores al mio de menor a mayor
   int k = 0;
-  for(int i = 0; i < total_nodes; i++){
-      if (i != mpi_rank){
+  for(int i = mpi_rank + 1; i < total_nodes; i++){
         nodos_mezclados[k] = i;
         k++;
-      }
   }
-  // Los mezclamos para que cada nodo envie los mensajes en ordenes distintos
-  // Se puede hacer enviando a la "derecha" de cada uno
-  random_shuffle(&nodos_mezclados[0], &nodos_mezclados[total_nodes - 2]);
+  for(int i = 0; i < mpi_rank; i++){
+        nodos_mezclados[k] = i;
+        k++;
+  }
 
   pthread_t thread_minero;
   pthread_mutex_init(&mutex_nodo_nuevo, NULL);
